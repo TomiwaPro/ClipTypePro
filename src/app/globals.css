@@ -17,7 +17,7 @@
   --color-danger: #FF4557;
   --color-text: #DDE4EE;
   --color-text-dim: #8898AA;
-  --color-text-muted: #4A5568;
+  --color-text-muted: #7A8699;
 
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-space-mono), ui-monospace, "SF Mono", Menlo, monospace;
@@ -40,7 +40,7 @@
   --c-danger: #FF4557;
   --c-text: #DDE4EE;
   --c-text-dim: #8898AA;
-  --c-text-muted: #4A5568;
+  --c-text-muted: #7A8699;
   --c-grad: linear-gradient(135deg, #00E5FF, #7B61FF);
   color-scheme: dark;
 }
@@ -60,7 +60,7 @@
   --c-danger: #CC2233;
   --c-text: #1A2030;
   --c-text-dim: #4A5568;
-  --c-text-muted: #8898AA;
+  --c-text-muted: #646F7E;
   --c-grad: linear-gradient(135deg, #007ACC, #6B4FE0);
   color-scheme: light;
 }
