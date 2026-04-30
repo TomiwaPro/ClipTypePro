@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* ─── ClipType Pro v4 Design Tokens ───────────────────────────────────────── */
+/* Tailwind v4: tokens declared in @theme become utilities (e.g. bg-bg, text-primary). */
+@theme {
+  --color-bg: #07090D;
+  --color-surface: #0E1118;
+  --color-surface-b: #141720;
+  --color-surface-c: #1A1F2E;
+  --color-border: #1C2030;
+  --color-border-l: #252A3A;
+  --color-primary: #00E5FF;
+  --color-primary-dim: #00B8CC;
+  --color-accent: #7B61FF;
+  --color-success: #00D97E;
+  --color-warning: #FFB800;
+  --color-danger: #FF4557;
+  --color-text: #DDE4EE;
+  --color-text-dim: #8898AA;
+  --color-text-muted: #4A5568;
+
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ─── Theme tokens that flip with light mode (consumed via var(--c-*)) ──── */
+:root,
+[data-theme="dark"] {
+  --c-bg: #07090D;
+  --c-surface: #0E1118;
+  --c-surface-b: #141720;
+  --c-surface-c: #1A1F2E;
+  --c-border: #1C2030;
+  --c-border-l: #252A3A;
+  --c-primary: #00E5FF;
+  --c-primary-dim: #00B8CC;
+  --c-accent: #7B61FF;
+  --c-success: #00D97E;
+  --c-warning: #FFB800;
+  --c-danger: #FF4557;
+  --c-text: #DDE4EE;
+  --c-text-dim: #8898AA;
+  --c-text-muted: #4A5568;
+  --c-grad: linear-gradient(135deg, #00E5FF, #7B61FF);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --c-bg: #F4F6FA;
+  --c-surface: #FFFFFF;
+  --c-surface-b: #EEF1F8;
+  --c-surface-c: #E4E8F2;
+  --c-border: #DDE3EE;
+  --c-border-l: #C8D0E0;
+  --c-primary: #007ACC;
+  --c-primary-dim: #005FA3;
+  --c-accent: #6B4FE0;
+  --c-success: #00955C;
+  --c-warning: #D4900A;
+  --c-danger: #CC2233;
+  --c-text: #1A2030;
+  --c-text-dim: #4A5568;
+  --c-text-muted: #8898AA;
+  --c-grad: linear-gradient(135deg, #007ACC, #6B4FE0);
+  color-scheme: light;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100%;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--c-bg); }
+::-webkit-scrollbar-thumb { background: var(--c-border-l); border-radius: 2px; }
+
+textarea, input, select { outline: none; transition: border-color .15s; }
+textarea:focus, input:focus, select:focus {
+  border-color: color-mix(in srgb, var(--c-primary) 55%, transparent) !important;
+}
+
+button { cursor: pointer; transition: all .12s; font-family: var(--font-sans); }
+button:hover { opacity: .85; }
+
+a { color: var(--c-primary); text-decoration: none; }
+
+/* ─── v4 Animations ───────────────────────────────────────────────────────── */
+@keyframes pulse   { 0%,100% { opacity: 1 } 50% { opacity: .4 } }
+@keyframes spin    { to { transform: rotate(360deg) } }
+@keyframes fadeUp  { from { opacity: 0; transform: translateY(18px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes blink   { 0%,100% { opacity: 1 } 50% { opacity: 0 } }
+@keyframes shimmer { 0% { background-position: -400px 0 } 100% { background-position: 400px 0 } }
+@keyframes float   { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
+@keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+
+.fade-up { animation: fadeUp .4s ease both; }
+.hover-card:hover { border-color: color-mix(in srgb, var(--c-primary) 44%, transparent) !important; transform: translateY(-1px); }
+.hover-row:hover  { background: color-mix(in srgb, var(--c-primary) 8%, transparent) !important; }
+.nav-link:hover, .nav-hover:hover { color: var(--c-primary) !important; }
