@@ -5,7 +5,7 @@ import { z } from "zod";
 export const emailSchema = z
   .string()
   .min(1, "Email is required")
-  .email("Enter a valid email address");
+  .email("Valid email required");
 
 export const passwordMinSchema = z
   .string()
@@ -77,26 +77,40 @@ export const USE_CASES = [
 ] as const;
 
 // ─── Password strength estimator ─────────────────────────────────────────────
-// Cheap heuristic — no external dep. Returns 0-4 score.
-// 0=empty, 1=weak, 2=fair, 3=strong, 4=excellent.
+// Cheap, no-dep tiering aligned with the Step 3 spec:
+//   Weak   — < 6 chars (or any obvious junk like "password", repeat chars)
+//   Medium — 6+ chars with at least mixed case OR numbers/symbols
+//   Strong — 11+ chars with both numbers AND symbols
+// 0=empty (no meter shown), 1=weak, 2=medium, 3=strong.
 
 export function estimatePasswordStrength(pw: string): {
-  score: 0 | 1 | 2 | 3 | 4;
-  label: string;
+  score: 0 | 1 | 2 | 3;
+  label: "" | "Weak" | "Medium" | "Strong";
 } {
   if (!pw) return { score: 0, label: "" };
 
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (pw.length >= 12) score++;
-  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
-  if (/\d/.test(pw) && /[^a-zA-Z\d]/.test(pw)) score++;
+  // Hard fail — common junk passwords are always Weak regardless of length
+  if (
+    /^(?:password|123456|qwerty|letmein|admin)\d*$/i.test(pw) ||
+    /^(.)\1+$/.test(pw) // all one character
+  ) {
+    return { score: 1, label: "Weak" };
+  }
 
-  // Penalties
-  if (/^(.)\1+$/.test(pw)) score = 1; // all one character
-  if (/^(?:password|123456|qwerty|letmein|admin)\d*$/i.test(pw)) score = 1;
+  const len = pw.length;
+  const hasLower = /[a-z]/.test(pw);
+  const hasUpper = /[A-Z]/.test(pw);
+  const hasNumber = /\d/.test(pw);
+  const hasSymbol = /[^a-zA-Z\d]/.test(pw);
+  const mixedCase = hasLower && hasUpper;
 
-  const clamped = Math.min(4, Math.max(0, score)) as 0 | 1 | 2 | 3 | 4;
-  const label = ["", "Weak", "Fair", "Strong", "Excellent"][clamped];
-  return { score: clamped, label };
+  if (len >= 11 && hasNumber && hasSymbol) {
+    return { score: 3, label: "Strong" };
+  }
+
+  if (len >= 6 && (mixedCase || hasNumber || hasSymbol)) {
+    return { score: 2, label: "Medium" };
+  }
+
+  return { score: 1, label: "Weak" };
 }

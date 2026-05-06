@@ -4,10 +4,9 @@ import { estimatePasswordStrength } from "@/lib/auth/schemas";
 
 const COLORS = [
   "var(--c-border)",   // 0 — empty
-  "var(--c-danger)",   // 1 — weak
-  "var(--c-warning)",  // 2 — fair
-  "var(--c-primary)",  // 3 — strong
-  "var(--c-success)",  // 4 — excellent
+  "var(--c-danger)",   // 1 — weak  (red)
+  "var(--c-warning)",  // 2 — medium (yellow)
+  "var(--c-success)",  // 3 — strong (green)
 ];
 
 export function PasswordStrengthMeter({ value }: { value: string }) {
@@ -26,7 +25,7 @@ export function PasswordStrengthMeter({ value }: { value: string }) {
           transition: "height .15s",
         }}
       >
-        {[1, 2, 3, 4].map((bar) => (
+        {[1, 2, 3].map((bar) => (
           <div
             key={bar}
             style={{

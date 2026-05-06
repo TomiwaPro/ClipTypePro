@@ -2,6 +2,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOutAction } from "@/lib/auth/actions";
 
+// Authenticated pages must never be cached: prevents the browser back button
+// from showing a stale dashboard after sign-out, and ensures every navigation
+// re-checks the session via middleware.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 /**
  * Placeholder dashboard. Step 4+ replaces this with the real app shell from
  * the v4 prototype. For now it confirms the auth round-trip end-to-end:
