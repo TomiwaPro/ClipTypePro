@@ -84,6 +84,127 @@ npm run start    # Run production build locally
 npm run lint     # ESLint
 ```
 
+## Stripe billing
+
+Subscription billing is wired through Stripe Checkout + Stripe Customer
+Portal. The webhook is the source of truth — every subscription state
+change is written to `profiles` from the webhook handler.
+
+### One-time Stripe dashboard setup
+
+#### 1. Create the account
+1. Sign up at https://stripe.com (free; you don't need to "activate" the
+   account to develop in test mode).
+2. Make sure the **Test mode** toggle is ON (top-right of the dashboard).
+
+#### 2. Grab API keys
+**Developers → API keys**:
+- `Publishable key` (`pk_test_…`) → `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+- `Secret key` (`sk_test_…`) → `STRIPE_SECRET_KEY`
+
+#### 3. Create the product + two recurring prices
+**Product catalog → + Add product**:
+- **Name**: `ClipType Pro`
+- **Recurring price #1**: $9 USD / month → after creating, copy the
+  `price_…` ID into `STRIPE_PRO_MONTHLY_PRICE_ID`
+- **Recurring price #2**: $79 USD / year → copy ID into
+  `STRIPE_PRO_ANNUAL_PRICE_ID`
+
+#### 4. Create the three coupons + matching promotion codes
+**Product catalog → Coupons → + New** for each:
+
+| Coupon ID | Discount | Duration |
+|---|---|---|
+| `STAY50` | 50% off | repeating, 3 months |
+| `LAUNCH30` | 30% off | once |
+| `PRO50` | 50% off | once |
+
+Then for each, **+ Promotion code** with the same string as the customer-facing
+**code** (`STAY50`, `LAUNCH30`, `PRO50`). The app validates these codes via
+Stripe's API — they must exist in your test-mode dashboard for the billing
+page coupon input to accept them.
+
+#### 5. Set up the webhook (different for local vs production)
+
+**Local development — use the Stripe CLI** (recommended):
+```bash
+# 1) Install: https://stripe.com/docs/stripe-cli#install
+# 2) Login (one-time)
+stripe login
+
+# 3) Forward events to your local server. Keep this running in a terminal
+#    while you develop.
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+
+# CLI prints a webhook signing secret like "whsec_xxxxx".
+# Paste that into .env.local as STRIPE_WEBHOOK_SECRET, then restart the dev server.
+```
+
+**Production** — Dashboard → **Developers → Webhooks → + Add endpoint**:
+- **Endpoint URL**: `https://YOUR_DOMAIN/api/stripe/webhook`
+- **Events to send**: select these four:
+  - `checkout.session.completed`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.payment_failed`
+- After creating, copy the endpoint's signing secret → set as
+  `STRIPE_WEBHOOK_SECRET` in your production env (e.g. Vercel project settings).
+
+### Test the full flow locally
+
+In one terminal:
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+In another:
+```bash
+npm run dev
+```
+
+Then:
+1. Sign in as a free user → visit `/dashboard/billing`
+2. Click **Upgrade to Pro →** → Stripe Checkout opens
+3. Pay with test card **`4242 4242 4242 4242`** (any future expiry, any CVC, any ZIP)
+4. Stripe redirects to `/dashboard/billing?success=true`
+5. The CLI window prints the webhook event — your handler updates the
+   `profiles` row to `tier=pro`, sets `stripe_customer_id` and
+   `stripe_subscription_id`
+6. Refresh `/dashboard/billing` — sidebar shows "Pro Trial Active", invoice
+   list populates, payment method displays last4 = 4242
+
+### Other test cards (Stripe-provided)
+
+| Scenario | Card |
+|---|---|
+| Successful payment | `4242 4242 4242 4242` |
+| Card declined | `4000 0000 0000 0002` |
+| Insufficient funds | `4000 0000 0000 9995` |
+| Requires authentication (3DS) | `4000 0025 0000 3155` |
+
+### Triggering webhook events manually
+
+The Stripe CLI can replay any event for testing:
+```bash
+stripe trigger checkout.session.completed
+stripe trigger customer.subscription.updated
+stripe trigger customer.subscription.deleted
+stripe trigger invoice.payment_failed
+```
+
+After each trigger, check that the `profiles` row updated as expected.
+
+### Routes ClipType exposes
+
+| Route | Purpose |
+|---|---|
+| `POST /api/stripe/create-checkout-session` | starts Checkout (priceId + optional coupon) |
+| `POST /api/stripe/customer-portal` | returns Stripe Customer Portal URL for self-service |
+| `POST /api/stripe/validate-coupon` | looks up a Promotion Code, returns discount details |
+| `POST /api/stripe/cancel-subscription` | sets `cancel_at_period_end: true` |
+| `POST /api/stripe/apply-stay-discount` | attaches STAY50 to the active subscription (save offer) |
+| `POST /api/stripe/webhook` | Stripe → ClipType event receiver |
+
 ## Authentication
 
 Pages live under `src/app/(auth)/*`:
