@@ -165,6 +165,32 @@ on your local machine after applying the dashboard config above:
 If any step misbehaves, paste the URL bar + the error displayed and we'll
 debug.
 
+### Why isn't the verification email arriving?
+
+Most common reasons, in order:
+
+1. **Spam / Promotions tab.** Supabase emails come from `noreply@mail.app.supabase.io` until you set up a custom domain — Gmail and Outlook frequently quarantine them.
+2. **Free-tier rate limit hit.** Supabase's shared SMTP allows ~3 emails/hour per project. After ~3 signups/resets/resends, the next ones silently get the `over_request_rate_limit` error code (the resend button on `/verify-email` will show *"Project email rate limit reached…"* with a 1-hour cooldown). Wait an hour, or set up a custom SMTP — see below.
+3. **Confirm-email setting off.** Supabase dashboard → **Authentication → Providers → Email** — verify *"Confirm email"* is ON. If it's off, signups become "instantly active" and no email is sent.
+4. **Email address typo.** No verification → signup row exists but unconfirmed. Cure: drop the user from **Authentication → Users**, sign up again with the correct address.
+5. **Look at the source of truth.** Dashboard → **Authentication → Logs**. Every send (success or rate-limited) is logged here. If you see no entry for your email, the request never reached Supabase — likely a frontend / network issue.
+
+### Custom SMTP via Resend (kills the rate limit)
+
+You already have a Resend API key in `.env.local`. Wire it up:
+
+1. **Resend dashboard → Domains → Add Domain** → add a domain you own (e.g. `cliptypepro.com`). Add the DNS records Resend shows you (SPF + DKIM + DMARC) at your registrar. Wait for "Verified".
+2. **Supabase dashboard → Project Settings → Auth → SMTP Settings → Enable Custom SMTP**, then fill in:
+   - Host: `smtp.resend.com`
+   - Port: `465` (SSL) or `587` (STARTTLS)
+   - Username: `resend`
+   - Password: your Resend API key (`re_…`)
+   - Sender email: `noreply@yourdomain.com`
+   - Sender name: `ClipType Pro`
+3. Save and send a test email from Supabase. Once that works, the 3/hour cap is gone.
+
+> Until your domain is verified in Resend, you can use Resend's onboarding sandbox sender — but it only delivers to **your** address (the email you signed up to Resend with), which is fine for testing.
+
 ## Supabase
 
 The schema lives in `supabase/migrations/001_initial_schema.sql` and seed data

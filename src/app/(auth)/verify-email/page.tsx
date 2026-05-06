@@ -102,7 +102,7 @@ export default async function VerifyEmailPage({
           textAlign: "center",
         }}
       >
-        Check spam · Valid for 24 hours
+        Check spam · Link valid for 1 hour
       </div>
 
       <div style={{ textAlign: "center", marginTop: 14 }}>

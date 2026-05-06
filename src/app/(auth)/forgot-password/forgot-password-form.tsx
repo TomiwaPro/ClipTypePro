@@ -61,7 +61,7 @@ export function ForgotPasswordForm() {
         >
           If an account exists for{" "}
           <strong style={{ color: "var(--c-text)" }}>{sentTo}</strong>, we sent a
-          reset link. It expires in 30 minutes.
+          reset link. It expires in 1 hour.
         </p>
         <div
           style={{
@@ -78,7 +78,7 @@ export function ForgotPasswordForm() {
         >
           {[
             "Check spam/junk if you don't see it",
-            "The link expires in 30 minutes",
+            "The link expires in 1 hour",
             "Contact support if you still can't get in",
           ].map((t, i) => (
             <div key={i} style={{ display: "flex", gap: 7 }}>
