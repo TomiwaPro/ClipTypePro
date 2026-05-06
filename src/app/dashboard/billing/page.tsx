@@ -174,6 +174,7 @@ export default async function BillingPage({
       stripeData={stripeData}
       successFlag={sp.success === "true"}
       cancelledFlag={sp.cancelled === "true"}
+      checkoutSessionId={sp.session_id ?? null}
       stats={{
         charsTyped: charsCount ?? 0,
         // Naive estimate: every 5 chars = 1 word, 25 WPM manual baseline.

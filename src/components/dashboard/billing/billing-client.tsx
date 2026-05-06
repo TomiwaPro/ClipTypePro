@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ChurnModal } from "./churn-modal";
 
@@ -49,6 +50,7 @@ export function BillingClient({
   stripeData,
   successFlag,
   cancelledFlag,
+  checkoutSessionId,
   stats,
 }: {
   tier: "free" | "pro" | "teams" | "enterprise";
@@ -59,6 +61,7 @@ export function BillingClient({
   stripeData: StripeData;
   successFlag: boolean;
   cancelledFlag: boolean;
+  checkoutSessionId: string | null;
   stats: {
     charsTyped: number;
     hoursSaved: number;
@@ -66,7 +69,9 @@ export function BillingClient({
     totalChars: number;
   };
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [syncBusy, setSyncBusy] = useState(false);
   const [cycle, setCycle] = useState<"month" | "year">(
     stripeData.interval === "year" ? "year" : "month",
   );
@@ -84,6 +89,84 @@ export function BillingClient({
   const isFree = tier === "free";
   const onPaid = !isFree;
   const cancelled = stripeData.cancelAtPeriodEnd === true;
+
+  /**
+   * Auto-sync after a successful checkout.
+   *
+   * Runs once on mount when ?success=true is in the URL, regardless of
+   * whether the webhook fired. Calls /api/stripe/sync, which pulls the
+   * live subscription from Stripe and writes it to the profile (using
+   * the service-role client). Then strips the URL params and refreshes
+   * the page so the server component re-fetches fresh data.
+   *
+   * Why this matters in dev: if `stripe listen` isn't running, the
+   * webhook never fires and the user sits on Free forever. With this
+   * effect, the page self-heals from the success redirect alone.
+   */
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (!successFlag || syncedRef.current) return;
+    syncedRef.current = true;
+    setSyncBusy(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/stripe/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            checkoutSessionId ? { sessionId: checkoutSessionId } : {},
+          ),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          toast.error("Sync failed", { description: json.error });
+        } else if (json.tier === "pro") {
+          toast.success("Welcome to Pro 🎉", {
+            description: "Your account is now upgraded.",
+          });
+        }
+      } catch (e) {
+        toast.error("Sync error", { description: (e as Error).message });
+      } finally {
+        // Strip query params either way, then refresh the server component.
+        // This kills the persistent banner-on-refresh problem.
+        router.replace("/dashboard/billing");
+        router.refresh();
+        setSyncBusy(false);
+      }
+    })();
+  }, [successFlag, checkoutSessionId, router]);
+
+  /**
+   * Manual "Refresh from Stripe" button — fallback for users whose
+   * webhook + auto-sync both somehow missed. Calls the same sync
+   * endpoint with no sessionId; it pulls fresh data from Stripe.
+   */
+  const onRefreshFromStripe = () => {
+    setSyncBusy(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/stripe/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          toast.error("Couldn't sync from Stripe", { description: json.error });
+        } else {
+          toast.success("Synced", {
+            description: `Tier: ${json.tier}${json.subscriptionStatus ? ` · ${json.subscriptionStatus}` : ""}`,
+          });
+          router.refresh();
+        }
+      } catch (e) {
+        toast.error("Network error", { description: (e as Error).message });
+      } finally {
+        setSyncBusy(false);
+      }
+    })();
+  };
 
   const onUpgrade = () => {
     if (!stripeReady) {
@@ -197,11 +280,15 @@ export function BillingClient({
         </p>
       </div>
 
-      {/* URL flags from checkout return */}
+      {/* URL flags from checkout return.
+          The ?success=true banner only shows while the auto-sync is in
+          flight (or briefly after if the page hasn't refreshed yet).
+          After router.replace strips ?success the banner is gone. */}
       {successFlag && (
         <Banner kind="success">
-          ✓ Welcome to Pro! Your account has been upgraded. It can take a few seconds
-          for the new plan to reflect everywhere — refresh if you don&apos;t see it.
+          {syncBusy
+            ? "Finalising your upgrade with Stripe…"
+            : "✓ Welcome to Pro! Your account has been upgraded."}
         </Banner>
       )}
       {cancelledFlag && (
@@ -358,14 +445,32 @@ export function BillingClient({
 
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
           {isFree ? (
-            <button
-              type="button"
-              onClick={onUpgrade}
-              disabled={pending || !stripeReady}
-              style={primaryBtn(pending || !stripeReady)}
-            >
-              {pending ? "Opening checkout…" : "Upgrade to Pro →"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onUpgrade}
+                disabled={pending || !stripeReady}
+                style={primaryBtn(pending || !stripeReady)}
+              >
+                {pending ? "Opening checkout…" : "Upgrade to Pro →"}
+              </button>
+              {/*
+                Refresh-from-Stripe escape hatch — visible to free users
+                so anyone whose webhook didn't fire after a real upgrade
+                can self-recover without contacting support.
+              */}
+              {stripeReady && (
+                <button
+                  type="button"
+                  onClick={onRefreshFromStripe}
+                  disabled={syncBusy}
+                  title="If you just upgraded but still see Free, click this"
+                  style={ghostBtn(syncBusy)}
+                >
+                  {syncBusy ? "Syncing…" : "Refresh from Stripe"}
+                </button>
+              )}
+            </>
           ) : (
             <>
               <button
