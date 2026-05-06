@@ -198,6 +198,7 @@ export function SignupForm() {
                 href="/tos"
                 style={{ color: "var(--c-primary)" }}
                 target="_blank"
+                rel="noopener noreferrer"
               >
                 Terms of Service
               </Link>{" "}
@@ -206,6 +207,7 @@ export function SignupForm() {
                 href="/privacy"
                 style={{ color: "var(--c-primary)" }}
                 target="_blank"
+                rel="noopener noreferrer"
               >
                 Privacy Policy
               </Link>

@@ -186,7 +186,7 @@ export const NAV_LINKS = [
   { label: "Pricing", href: "#pricing" },
   { label: "Platforms", href: "#platforms" },
   { label: "API", href: "#api" },
-  { label: "Docs", href: "#docs" },
+  { label: "Docs", href: "#faq" },
 ] as const;
 
 export const FOOTER_LINKS = [
