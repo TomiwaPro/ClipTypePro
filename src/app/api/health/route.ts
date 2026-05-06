@@ -140,6 +140,56 @@ export async function GET() {
       }
     }
 
+    // Raw HTTP probe — bypasses the supabase-js SDK and proves whether the
+    // anon key string itself is rejected at the wire level.
+    let raw_probe: {
+      ok: boolean;
+      status?: number;
+      body_excerpt?: string;
+      anon_key_first_30?: string;
+      anon_key_last_10?: string;
+      anon_key_length?: number;
+      url?: string;
+    } | null = null;
+    if (status === 401 || !error.message) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      try {
+        const res = await fetch(
+          `${url}/rest/v1/platform_ratings?select=name&limit=1`,
+          {
+            headers: {
+              apikey: anonKey,
+              Authorization: `Bearer ${anonKey}`,
+            },
+            cache: "no-store",
+            signal: AbortSignal.timeout(5_000),
+          },
+        );
+        const text = await res.text();
+        raw_probe = {
+          ok: res.ok,
+          status: res.status,
+          body_excerpt: text.slice(0, 200),
+          // Echo prefix so user can visually verify .env.local matches dashboard.
+          // Public information — JWT header bytes are non-secret.
+          anon_key_first_30: anonKey.slice(0, 30),
+          anon_key_last_10: anonKey.slice(-10),
+          anon_key_length: anonKey.length,
+          url,
+        };
+      } catch (e) {
+        raw_probe = {
+          ok: false,
+          body_excerpt: `fetch error: ${(e as Error).message}`,
+          anon_key_first_30: anonKey.slice(0, 30),
+          anon_key_last_10: anonKey.slice(-10),
+          anon_key_length: anonKey.length,
+          url,
+        };
+      }
+    }
+
     const cause401 =
       status === 401
         ? service_role_check?.ok
@@ -160,6 +210,7 @@ export async function GET() {
         http_status: status,
         http_status_text: statusText,
         service_role_check,
+        raw_probe,
         likely_cause:
           cause401 ??
           ((error as { code?: string }).code === "PGRST301"
