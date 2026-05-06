@@ -556,18 +556,9 @@ export function TyperClient({
               </button>
             )}
           </div>
-          <textarea
-            value={typedText}
-            readOnly
-            placeholder="Output appears here in real time…"
-            spellCheck={false}
-            style={{
-              ...textAreaStyle(),
-              color:
-                status.kind === "complete"
-                  ? "var(--c-success)"
-                  : "var(--c-text)",
-            }}
+          <OutputView
+            text={typedText}
+            complete={status.kind === "complete"}
           />
           <div
             style={{
@@ -922,6 +913,64 @@ function textAreaStyle() {
     boxSizing: "border-box" as const,
     height: 150,
   };
+}
+
+/**
+ * Read-only live-output surface.
+ *
+ * Renders the typed text in a scrollable div that:
+ *   - grows naturally with content (no JS height-mutation per char)
+ *   - caps at 60vh; past that it scrolls internally
+ *   - auto-scrolls to the bottom on every text update so the latest
+ *     character is always in view
+ *
+ * We use a div + `white-space: pre-wrap` instead of a <textarea> because
+ * the output is read-only by design — users never type into it.
+ */
+function OutputView({ text, complete }: { text: string; complete: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Pin to the bottom whenever text grows. Cheap — only sets scrollTop,
+  // browser elides the work when we're already at the bottom.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [text]);
+
+  return (
+    <div
+      ref={ref}
+      role="log"
+      aria-live="polite"
+      aria-atomic="false"
+      style={{
+        width: "100%",
+        background: "var(--c-surface-b)",
+        border: "1px solid var(--c-border)",
+        borderRadius: 7,
+        padding: "10px 12px",
+        color: complete ? "var(--c-success)" : "var(--c-text)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 12,
+        lineHeight: 1.65,
+        boxSizing: "border-box",
+        // Grow naturally; cap at viewport-relative height before internal scroll.
+        minHeight: 150,
+        maxHeight: "clamp(200px, 60vh, 600px)",
+        overflowY: "auto",
+        // Preserve newlines + spacing exactly as typed.
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}
+    >
+      {text || (
+        <span style={{ color: "var(--c-text-muted)" }}>
+          Output appears here in real time…
+        </span>
+      )}
+    </div>
+  );
 }
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
