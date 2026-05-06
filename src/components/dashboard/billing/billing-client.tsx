@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { ChurnModal } from "./churn-modal";
 
 /**
@@ -109,31 +110,22 @@ export function BillingClient({
     syncedRef.current = true;
     setSyncBusy(true);
     (async () => {
-      try {
-        const res = await fetch("/api/stripe/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            checkoutSessionId ? { sessionId: checkoutSessionId } : {},
-          ),
+      const result = await apiPost<{ tier: string; subscriptionStatus?: string | null }>(
+        "/api/stripe/sync",
+        checkoutSessionId ? { sessionId: checkoutSessionId } : {},
+      );
+      if (!result.ok) {
+        toast.error("Sync failed", { description: result.error });
+      } else if (result.data.tier === "pro") {
+        toast.success("Welcome to Pro 🎉", {
+          description: "Your account is now upgraded.",
         });
-        const json = await res.json();
-        if (!res.ok) {
-          toast.error("Sync failed", { description: json.error });
-        } else if (json.tier === "pro") {
-          toast.success("Welcome to Pro 🎉", {
-            description: "Your account is now upgraded.",
-          });
-        }
-      } catch (e) {
-        toast.error("Sync error", { description: (e as Error).message });
-      } finally {
-        // Strip query params either way, then refresh the server component.
-        // This kills the persistent banner-on-refresh problem.
-        router.replace("/dashboard/billing");
-        router.refresh();
-        setSyncBusy(false);
       }
+      // Strip query params either way, then refresh the server component.
+      // This kills the persistent banner-on-refresh problem.
+      router.replace("/dashboard/billing");
+      router.refresh();
+      setSyncBusy(false);
     })();
   }, [successFlag, checkoutSessionId, router]);
 
@@ -145,26 +137,22 @@ export function BillingClient({
   const onRefreshFromStripe = () => {
     setSyncBusy(true);
     (async () => {
-      try {
-        const res = await fetch("/api/stripe/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
+      const result = await apiPost<{ tier: string; subscriptionStatus?: string | null }>(
+        "/api/stripe/sync",
+      );
+      if (!result.ok) {
+        toast.error("Couldn't sync from Stripe", { description: result.error });
+      } else {
+        toast.success("Synced", {
+          description: `Tier: ${result.data.tier}${
+            result.data.subscriptionStatus
+              ? ` · ${result.data.subscriptionStatus}`
+              : ""
+          }`,
         });
-        const json = await res.json();
-        if (!res.ok) {
-          toast.error("Couldn't sync from Stripe", { description: json.error });
-        } else {
-          toast.success("Synced", {
-            description: `Tier: ${json.tier}${json.subscriptionStatus ? ` · ${json.subscriptionStatus}` : ""}`,
-          });
-          router.refresh();
-        }
-      } catch (e) {
-        toast.error("Network error", { description: (e as Error).message });
-      } finally {
-        setSyncBusy(false);
+        router.refresh();
       }
+      setSyncBusy(false);
     })();
   };
 
@@ -177,46 +165,30 @@ export function BillingClient({
     }
     const priceId = cycle === "year" ? annualPriceId : monthlyPriceId;
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/stripe/create-checkout-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            priceId,
-            coupon: couponApplied?.code,
-          }),
+      const result = await apiPost<{ url: string }>(
+        "/api/stripe/create-checkout-session",
+        { priceId, coupon: couponApplied?.code },
+      );
+      if (!result.ok || !result.data.url) {
+        toast.error("Couldn't start checkout", {
+          description: result.ok ? "No checkout URL returned" : result.error,
         });
-        const json = await res.json();
-        if (!res.ok || !json.url) {
-          toast.error("Couldn't start checkout", {
-            description: json.error ?? "Try again",
-          });
-          return;
-        }
-        window.location.href = json.url;
-      } catch (e) {
-        toast.error("Network error", { description: (e as Error).message });
+        return;
       }
+      window.location.href = result.data.url;
     });
   };
 
   const onManage = () => {
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/stripe/customer-portal", {
-          method: "POST",
+      const result = await apiPost<{ url: string }>("/api/stripe/customer-portal");
+      if (!result.ok || !result.data.url) {
+        toast.error("Couldn't open billing portal", {
+          description: result.ok ? "No URL returned" : result.error,
         });
-        const json = await res.json();
-        if (!res.ok || !json.url) {
-          toast.error("Couldn't open billing portal", {
-            description: json.error ?? "Try again",
-          });
-          return;
-        }
-        window.location.href = json.url;
-      } catch (e) {
-        toast.error("Network error", { description: (e as Error).message });
+        return;
       }
+      window.location.href = result.data.url;
     });
   };
 
@@ -226,40 +198,44 @@ export function BillingClient({
       setCouponError("Enter a code");
       return;
     }
-    try {
-      const res = await fetch("/api/stripe/validate-coupon", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: coupon.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setCouponError(json.error ?? "Invalid code");
-        setCouponApplied(null);
-        return;
-      }
-      // Build a friendly label from the discount details
-      const pct = json.percentOff ? `${json.percentOff}% off` : null;
-      const amt =
-        json.amountOff && json.currency
-          ? `${(json.amountOff / 100).toFixed(2)} ${json.currency.toUpperCase()} off`
-          : null;
-      const dur =
-        json.duration === "repeating" && json.durationInMonths
-          ? ` for ${json.durationInMonths} mo`
-          : json.duration === "once"
-            ? " for one cycle"
-            : "";
-      setCouponApplied({
-        code: json.code as string,
-        label: `${pct ?? amt ?? "Discount applied"}${dur}`,
-      });
-      toast.success("Coupon applied", {
-        description: `${pct ?? amt ?? ""}${dur}`,
-      });
-    } catch (e) {
-      setCouponError((e as Error).message);
+    type ValidatedCoupon = {
+      ok: true;
+      code: string;
+      percentOff: number | null;
+      amountOff: number | null;
+      currency: string | null;
+      duration: "forever" | "once" | "repeating";
+      durationInMonths: number | null;
+    };
+    const result = await apiPost<ValidatedCoupon>(
+      "/api/stripe/validate-coupon",
+      { code: coupon.trim() },
+    );
+    if (!result.ok) {
+      setCouponError(result.error);
+      setCouponApplied(null);
+      return;
     }
+    const json = result.data;
+    // Build a friendly label from the discount details
+    const pct = json.percentOff ? `${json.percentOff}% off` : null;
+    const amt =
+      json.amountOff && json.currency
+        ? `${(json.amountOff / 100).toFixed(2)} ${json.currency.toUpperCase()} off`
+        : null;
+    const dur =
+      json.duration === "repeating" && json.durationInMonths
+        ? ` for ${json.durationInMonths} mo`
+        : json.duration === "once"
+          ? " for one cycle"
+          : "";
+    setCouponApplied({
+      code: json.code,
+      label: `${pct ?? amt ?? "Discount applied"}${dur}`,
+    });
+    toast.success("Coupon applied", {
+      description: `${pct ?? amt ?? ""}${dur}`,
+    });
   };
 
   return (

@@ -14,6 +14,18 @@ import { getStripe } from "@/lib/stripe/server";
  * user has paid for the rest of the period.
  */
 export async function POST() {
+  try {
+    return await handle();
+  } catch (e) {
+    console.error("[stripe/cancel-subscription] unhandled:", e);
+    return NextResponse.json(
+      { error: (e as Error)?.message || "Cancel route crashed" },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle() {
   const supabase = await createClient();
   const {
     data: { user },

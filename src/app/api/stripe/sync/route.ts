@@ -38,6 +38,25 @@ const schema = z.object({
 type Tier = "free" | "pro" | "teams" | "enterprise";
 
 export async function POST(req: Request) {
+  // Top-level guard so any uncaught throw (missing Stripe env, Supabase
+  // network blip, etc.) becomes a structured JSON 500 rather than the
+  // Next.js HTML error page (which crashes JSON.parse on the client).
+  try {
+    return await handle(req);
+  } catch (e) {
+    console.error("[stripe/sync] unhandled:", e);
+    return NextResponse.json(
+      {
+        error:
+          (e as Error)?.message ||
+          "Sync route crashed. Check server logs for the underlying cause.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle(req: Request) {
   let body: unknown = {};
   try {
     body = await req.json();
@@ -65,7 +84,18 @@ export async function POST(req: Request) {
 
   let customerId = profile?.stripe_customer_id as string | null;
   let subscriptionId = profile?.stripe_subscription_id as string | null;
-  const stripe = getStripe();
+
+  // Resolve the Stripe SDK lazily so a missing STRIPE_SECRET_KEY surfaces
+  // here (caught by the outer try) rather than at module load time.
+  let stripe: ReturnType<typeof getStripe>;
+  try {
+    stripe = getStripe();
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 500 },
+    );
+  }
 
   // If no customer on profile but we have a sessionId, recover from it.
   // Common case: webhook missed; user is on /billing?success=true&session_id=...

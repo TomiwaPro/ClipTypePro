@@ -30,6 +30,18 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    console.error("[stripe/create-checkout-session] unhandled:", e);
+    return NextResponse.json(
+      { error: (e as Error)?.message || "Checkout route crashed" },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle(req: Request) {
   let body: unknown;
   try {
     body = await req.json();
@@ -72,7 +84,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const stripe = getStripe();
+  // Resolve Stripe lazily — missing env surfaces here as JSON 500
+  // rather than as an uncaught throw → HTML error page.
+  let stripe;
+  try {
+    stripe = getStripe();
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 500 },
+    );
+  }
 
   // Reuse an existing Stripe customer if we already created one for this
   // user (post-cancellation / re-upgrade path), otherwise let Checkout
