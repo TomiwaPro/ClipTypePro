@@ -121,7 +121,9 @@ export async function forgotPasswordAction(formData: FormData): Promise<ActionRe
 }
 
 // ─── Resend confirmation email ───────────────────────────────────────────────
-export async function resendConfirmationAction(email: string): Promise<ActionResult> {
+export async function resendConfirmationAction(
+  email: string,
+): Promise<ActionResult<{ cooldownSeconds: number }>> {
   if (!email || !email.includes("@")) {
     return { ok: false, error: "Missing email address." };
   }
@@ -133,8 +135,21 @@ export async function resendConfirmationAction(email: string): Promise<ActionRes
     email,
     options: { emailRedirectTo: `${origin}/auth/callback?next=/dashboard` },
   });
-  if (error) return { ok: false, error: mapAuthError(error) };
-  return { ok: true };
+  if (error) {
+    // Pass the parsed cooldown back to the UI so the button waits the right
+    // number of seconds (60s for per-email, 3600s for per-project).
+    const { cooldownForError } = await import("./error-map");
+    const cooldown = cooldownForError(error) ?? 0;
+    return {
+      ok: false,
+      error: mapAuthError(error),
+      fieldErrors: cooldown
+        ? { _cooldown: [String(cooldown)] }
+        : undefined,
+    };
+  }
+  // Successful resend → standard 60s cooldown.
+  return { ok: true, data: { cooldownSeconds: 60 } };
 }
 
 // ─── Update password (after reset email click → /reset-password) ─────────────

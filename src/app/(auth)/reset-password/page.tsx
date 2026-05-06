@@ -35,8 +35,8 @@ export default async function ResetPasswordPage() {
             padding: "8px 0 4px",
           }}
         >
-          Reset links expire after 30 minutes and can only be used once. Start
-          over from the &ldquo;Forgot password&rdquo; page.
+          Reset links expire after 1 hour and can only be used once. Start over
+          from the &ldquo;Forgot password&rdquo; page.
         </p>
       </AuthCard>
     );

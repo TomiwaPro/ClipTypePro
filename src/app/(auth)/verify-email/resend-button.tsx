@@ -4,7 +4,17 @@ import { useEffect, useState, useTransition } from "react";
 import { ghostButtonStyle } from "@/components/auth/auth-card";
 import { resendConfirmationAction } from "@/lib/auth/actions";
 
-const COOLDOWN_SECONDS = 60;
+const DEFAULT_COOLDOWN = 60;
+
+function formatRemaining(seconds: number): string {
+  if (seconds <= 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  if (mins < 60) return `${mins}m ${rem.toString().padStart(2, "0")}s`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hrs}h ${remMins.toString().padStart(2, "0")}m`;
+}
 
 export function ResendButton({ email }: { email: string }) {
   // 0 = enabled, >0 = disabled (showing remaining seconds)
@@ -14,7 +24,7 @@ export function ResendButton({ email }: { email: string }) {
   );
   const [pending, startTransition] = useTransition();
 
-  // Countdown ticker — pure DOM side-effect, no setState-in-render concerns.
+  // Countdown ticker.
   useEffect(() => {
     if (secondsLeft <= 0) return;
     const t = setInterval(() => {
@@ -29,10 +39,18 @@ export function ResendButton({ email }: { email: string }) {
     startTransition(async () => {
       const result = await resendConfirmationAction(email);
       if (result.ok) {
+        const cd = result.data?.cooldownSeconds ?? DEFAULT_COOLDOWN;
         setMessage({ kind: "ok", text: "Sent! Check your inbox again." });
-        setSecondsLeft(COOLDOWN_SECONDS);
+        setSecondsLeft(cd);
       } else {
+        // Even on failure, start a cooldown so the user can't spam clicks.
+        // For rate-limit errors, the action embeds the actual wait in fieldErrors._cooldown.
+        const fromServer = Number(result.fieldErrors?._cooldown?.[0]);
+        const cd = Number.isFinite(fromServer) && fromServer > 0
+          ? fromServer
+          : DEFAULT_COOLDOWN;
         setMessage({ kind: "err", text: result.error });
+        setSecondsLeft(cd);
       }
     });
   };
@@ -41,7 +59,7 @@ export function ResendButton({ email }: { email: string }) {
   const label = pending
     ? "Sending…"
     : secondsLeft > 0
-      ? `Resend in ${secondsLeft}s`
+      ? `Resend in ${formatRemaining(secondsLeft)}`
       : "Resend verification email";
 
   return (
@@ -65,6 +83,7 @@ export function ResendButton({ email }: { email: string }) {
             marginTop: 8,
             fontSize: 11,
             textAlign: "center",
+            lineHeight: 1.5,
             color:
               message.kind === "ok"
                 ? "var(--c-success)"
