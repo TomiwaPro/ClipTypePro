@@ -84,6 +84,87 @@ npm run start    # Run production build locally
 npm run lint     # ESLint
 ```
 
+## Authentication
+
+Pages live under `src/app/(auth)/*`:
+
+| Route | Purpose |
+|---|---|
+| `/login` | Email/password + Google OAuth |
+| `/signup` | Account creation, ToS + academic-integrity gates |
+| `/verify-email` | Post-signup hold page; 60s resend cooldown |
+| `/forgot-password` | Request a reset email |
+| `/reset-password` | Set a new password (requires recovery session) |
+| `/auth/callback` | OAuth + email confirmation + reset-link landing |
+| `/dashboard` | Auth-required placeholder (real shell ports in Step 4) |
+
+Middleware (`src/middleware.ts`) refreshes Supabase tokens on every
+request and bounces unauthenticated traffic away from `/dashboard/*`,
+authenticated traffic away from `/login` + `/signup`.
+
+### Supabase dashboard configuration (one-time)
+
+Apply these settings in **Project Settings → Authentication** before
+testing the auth flow:
+
+#### Sign-in providers
+- **Email** → enabled (default). **Confirm email** ON.
+- **Google** → enable + paste OAuth client ID + secret (see below).
+
+#### URL configuration
+- **Site URL**: `http://localhost:3000`
+- **Redirect URLs** — add all of these:
+  - `http://localhost:3000/auth/callback`
+  - `http://localhost:3000/**`  (covers all post-auth landing pages)
+  - production URL when you deploy
+
+#### Email templates (Authentication → Email Templates)
+Customise the three templates for ClipType Pro branding. The default
+templates work; only edit if you want better-looking emails. Use these
+variable substitutions Supabase exposes:
+- `{{ .ConfirmationURL }}` — for confirm-signup
+- `{{ .Token }}` / `{{ .TokenHash }}` — for OTP
+- `{{ .Email }}`, `{{ .Data.full_name }}` — for personalisation
+
+#### Session duration
+**Authentication → Settings → Sessions**:
+- **JWT expiry**: 3600 (1h access token — refreshes silently)
+- **Inactivity timeout**: 604800 (7 days)
+- **Time-box (max session)**: 604800 (7 days)
+
+#### Google OAuth setup
+1. https://console.cloud.google.com → **APIs & Services → Credentials → Create Credentials → OAuth client ID** (Web application)
+2. **Authorized redirect URIs**: paste the exact URL Supabase shows you in **Authentication → Providers → Google** (looks like `https://<ref>.supabase.co/auth/v1/callback`)
+3. Copy the **Client ID** + **Client Secret** back into Supabase's Google provider settings → save
+
+### Manual test plan
+
+The whole auth flow needs a live Supabase. Run through these in order
+on your local machine after applying the dashboard config above:
+
+| # | Action | Expected |
+|---|---|---|
+| 1 | Visit `/dashboard` while logged out | Redirects to `/login?next=/dashboard` |
+| 2 | `/login` — submit empty form | Inline errors on email + password, no network call |
+| 3 | `/login` — wrong password | "Incorrect email or password." inline |
+| 4 | `/login` — unverified account | "Please verify your email…" inline |
+| 5 | `/signup` — weak password (e.g. "abc") | Strength meter red "Weak"; submit disabled |
+| 6 | `/signup` — strong password but ToS unchecked | Submit disabled |
+| 7 | `/signup` — all valid | Redirects to `/verify-email?email=…` |
+| 8 | `/verify-email` — click Resend | Disables for 60s with countdown; new email arrives |
+| 9 | Click confirmation link in email | Lands at `/dashboard` signed in |
+| 10 | While signed in, visit `/login` | Bounces to `/dashboard` |
+| 11 | Sign out from `/dashboard` | Lands on `/login` |
+| 12 | `/forgot-password` — submit email | Success card "Check your inbox" |
+| 13 | Click reset link in email | Lands at `/reset-password` |
+| 14 | `/reset-password` — mismatched passwords | Inline "Passwords don't match" |
+| 15 | `/reset-password` — set new password | Redirects to `/login?reset=success` with green banner |
+| 16 | Sign in with new password | Lands on `/dashboard` |
+| 17 | `/login` — click "Continue with Google" | Redirects to Google's consent screen |
+
+If any step misbehaves, paste the URL bar + the error displayed and we'll
+debug.
+
 ## Supabase
 
 The schema lives in `supabase/migrations/001_initial_schema.sql` and seed data
