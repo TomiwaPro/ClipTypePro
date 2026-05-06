@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
 import { type MouseEvent } from "react";
+import { ThemeToggle } from "@/components/auth/theme-toggle";
 import { NAV_ITEMS } from "@/lib/dashboard/nav-items";
 import { useUIStore } from "./ui-store";
 
@@ -15,11 +16,15 @@ import { useUIStore } from "./ui-store";
  *
  * Pro-locked items: free users get a tiny "PRO" badge in place of any
  * notification badge; click is intercepted to open the upgrade modal
- * instead of navigating, since we'd otherwise show them an empty teaser
- * page.
+ * instead of navigating.
  *
- * Receives the unread notif count and current tier as props from the
- * server layout — no client-side data fetches.
+ * Mobile drawer: at <720px, the sidebar is `position: fixed` and
+ * translated off-screen by default. Hamburger in the topbar slides it in.
+ * Click on any nav item closes the drawer so the user lands on the new
+ * page without the drawer covering it.
+ *
+ * Receives unread notif count, tier, and trial-days-left from the server
+ * layout — no client-side data fetches.
  */
 export function Sidebar({
   tier,
@@ -28,12 +33,13 @@ export function Sidebar({
 }: {
   tier: "free" | "pro" | "teams" | "enterprise";
   unreadCount: number;
-  /** Days remaining in Pro trial (negative if expired or no trial). */
   trialDaysLeft: number | null;
 }) {
   const pathname = usePathname();
   const openSearch = useUIStore((s) => s.openSearch);
   const openUpgrade = useUIStore((s) => s.openUpgrade);
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const closeSidebar = useUIStore((s) => s.closeSidebar);
   const isFree = tier === "free";
 
   const handleNavClick = (
@@ -44,11 +50,15 @@ export function Sidebar({
     if (isPro && isFree) {
       e.preventDefault();
       openUpgrade(slug);
+      return;
     }
+    // Mobile drawer: close after navigation so the user can see the new page.
+    if (sidebarOpen) closeSidebar();
   };
 
   return (
     <aside
+      data-open={sidebarOpen ? "true" : "false"}
       style={{
         width: 200,
         minWidth: 200,
@@ -59,6 +69,7 @@ export function Sidebar({
         height: "100vh",
         position: "sticky",
         top: 0,
+        flexShrink: 0,
       }}
       className="dashboard-sidebar"
     >
@@ -71,6 +82,7 @@ export function Sidebar({
       >
         <Link
           href="/dashboard/typer"
+          onClick={() => sidebarOpen && closeSidebar()}
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 15,
@@ -213,13 +225,29 @@ export function Sidebar({
         })}
       </nav>
 
-      {/* Footer: tier indicator / upgrade prompt */}
+      {/* Footer: theme toggle + tier indicator */}
       <div
         style={{
           padding: "10px 12px",
           borderTop: "1px solid var(--c-border)",
+          display: "grid",
+          gap: 8,
         }}
       >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 11, color: "var(--c-text-dim)" }}>
+            Dark mode
+          </span>
+          <ThemeToggle inline />
+        </div>
+
         {isFree ? (
           <button
             type="button"
@@ -255,16 +283,28 @@ export function Sidebar({
         )}
       </div>
 
-      {/*
-        Helper for the topbar: makes the sidebar a fixed-width column on
-        desktop and hides it on mobile (the topbar reveals a toggle later).
-      */}
+      {/* Drawer behavior: at <720px, sidebar becomes a fixed off-canvas
+          drawer. data-open=true slides it in. The DashboardLayout renders
+          a backdrop in the same breakpoint window. */}
       <style>{`
-        @media (max-width: 720px) {
-          .dashboard-sidebar { display: none; }
-        }
         .dashboard-nav-item:hover {
           color: var(--c-primary) !important;
+        }
+        @media (max-width: 720px) {
+          .dashboard-sidebar {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 90;
+            transform: translateX(-100%);
+            transition: transform .25s ease;
+            box-shadow: 0 0 0 transparent;
+          }
+          .dashboard-sidebar[data-open="true"] {
+            transform: translateX(0);
+            box-shadow: 8px 0 32px rgba(0, 0, 0, 0.3);
+          }
         }
       `}</style>
     </aside>
