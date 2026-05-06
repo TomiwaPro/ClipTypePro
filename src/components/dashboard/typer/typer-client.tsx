@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { saveTypingSessionAction } from "@/lib/typer/actions";
 import { useClipboardHistory } from "@/lib/typer/clipboard-history";
+import { consumePendingSnippet } from "@/lib/typer/pending-snippet";
 import {
   FREE_CHAR_LIMIT,
   randomDelay,
@@ -103,6 +104,21 @@ export function TyperClient({
   useEffect(() => {
     humanRef.current = humanMode;
   }, [humanMode]);
+
+  // ─── "Load & Type" handoff from /dashboard/snippets ──────────────────
+  // The snippets page writes the chosen content to sessionStorage just
+  // before navigating here. We consume it once on mount (consumePending
+  // also clears storage so a remount can't double-load).
+  //
+  // The setState-in-effect lint rule is suppressed below: the value
+  // genuinely lives outside React (sessionStorage), can't be read
+  // during SSR, and applies exactly once. Lazy initial state can't be
+  // used because the initializer would run during server render too.
+  useEffect(() => {
+    const pending = consumePendingSnippet();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (pending) setClipText(pending);
+  }, []);
 
   // ─── Cleanup on unmount ──────────────────────────────────────────────
   useEffect(() => {
