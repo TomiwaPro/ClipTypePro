@@ -181,13 +181,23 @@ export const STATS = [
   ["4.9★", "Average Rating"],
 ] as const;
 
-export const NAV_LINKS = [
+export type NavLink = {
+  label: string;
+  href: string;
+  /** When true, the link is rendered as a non-clickable disabled item with a "Soon" pill. */
+  disabled?: boolean;
+};
+
+export const NAV_LINKS: NavLink[] = [
   { label: "Features", href: "#features" },
   { label: "Pricing", href: "#pricing" },
   { label: "Platforms", href: "#platforms" },
   { label: "API", href: "#api" },
-  { label: "Docs", href: "#faq" },
-] as const;
+  { label: "FAQ", href: "#faq" },
+  // Docs page doesn't exist yet — keep it visible in nav as a disabled
+  // teaser ("Soon") so users see it's planned. Wire to /docs once built.
+  { label: "Docs", href: "/docs", disabled: true },
+];
 
 export const FOOTER_LINKS = [
   { label: "Privacy Policy", href: "/privacy" },
