@@ -1,18 +1,42 @@
-import { StubPage } from "@/components/dashboard/stub-page";
+import { redirect } from "next/navigation";
+import { TyperClient } from "@/components/dashboard/typer/typer-client";
+import { createClient } from "@/lib/supabase/server";
 
-export default function TyperPage() {
+export const dynamic = "force-dynamic";
+
+/**
+ * Real Step 6 typing engine. Server component handles all DB reads
+ * (tier + platform list); the engine itself is a thick client component.
+ */
+export default async function TyperPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const [{ data: profile }, { data: platforms }] = await Promise.all([
+    supabase.from("profiles").select("tier").eq("id", user.id).single(),
+    supabase
+      .from("platform_ratings")
+      .select("name, category, risk_level")
+      .order("name"),
+  ]);
+
+  const tier = (profile?.tier ?? "free") as
+    | "free"
+    | "pro"
+    | "teams"
+    | "enterprise";
+
   return (
-    <StubPage
-      title="Clipboard Typer"
-      subtitle="Copy → auto-types character by character into any app"
-      comingIn="Step 6"
-      bullets={[
-        "Read clipboard content (with permission)",
-        "Speed presets: Stealth, Human, Balanced, Fast, Instant",
-        "Live WPM, character count, progress bar",
-        "Pause / resume / stop while typing",
-        "Free-tier 1,000 character limit; Pro unlocks unlimited",
-      ]}
+    <TyperClient
+      tier={tier}
+      platforms={(platforms ?? []).map((p) => ({
+        name: p.name as string,
+        category: p.category as string,
+        riskLevel: p.risk_level as "green" | "yellow" | "red",
+      }))}
     />
   );
 }

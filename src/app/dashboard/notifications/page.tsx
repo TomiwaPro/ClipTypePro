@@ -1,47 +1,33 @@
-import { revalidatePath } from "next/cache";
 import { StubPage } from "@/components/dashboard/stub-page";
-import { createClient } from "@/lib/supabase/server";
+import { MarkAsReadOnMount } from "./mark-as-read";
 
 /**
  * Notifications page (placeholder).
  *
- * Even though the rich list ships in Step 7, we already mark all of the
- * user's notifications as read on visit so the unread badge in the
- * sidebar visibly clears. This is the behaviour the verification spec
- * called out:
+ * The real list ships in Step 7. For now we already mark everything as
+ * read on visit so the sidebar's unread badge clears, matching the
+ * verified Step 5 behaviour.
  *
- *   "Clicking Notifications: badge disappears (count goes to 0)"
- *
- * Marking-read is idempotent (`update ... where read = false`) so
- * repeated visits don't bounce the row's updated_at.
+ * The mark-read side effect runs from a client component (`useEffect`)
+ * because Next 16 forbids `revalidatePath` during server render. The
+ * server action is invoked from the effect, updates DB, and revalidates
+ * the dashboard layout to refresh the sidebar count.
  */
-export default async function NotificationsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user) {
-    await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("user_id", user.id)
-      .eq("read", false);
-    // Invalidate the layout so the sidebar's unread count refreshes.
-    revalidatePath("/dashboard", "layout");
-  }
-
+export default function NotificationsPage() {
   return (
-    <StubPage
-      title="Notifications"
-      subtitle="Alerts, billing events, system messages"
-      comingIn="Step 7"
-      bullets={[
-        "Real notifs from the notifications table",
-        "Unread badge already wired in the sidebar",
-        "Mark single / all as read",
-        "Filter by type: alert / billing / system / team",
-      ]}
-    />
+    <>
+      <MarkAsReadOnMount />
+      <StubPage
+        title="Notifications"
+        subtitle="Alerts, billing events, system messages"
+        comingIn="Step 7"
+        bullets={[
+          "Real notifs from the notifications table",
+          "Unread badge already wired in the sidebar",
+          "Mark single / all as read",
+          "Filter by type: alert / billing / system / team",
+        ]}
+      />
+    </>
   );
 }
