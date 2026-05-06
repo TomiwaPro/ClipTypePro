@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 
 /**
  * Churn-prevention modal — opens when a Pro user clicks Cancel.
@@ -34,48 +35,32 @@ export function ChurnModal({
   const onKeep = () => {
     setBusyKind("keep");
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/stripe/apply-stay-discount", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: "STAY50" }),
-        });
-        const json = await res.json();
-        if (!res.ok) {
-          toast.error("Couldn't apply discount", { description: json.error });
-        } else {
-          toast.success("Discount applied — 50% off for 3 months");
-          onOpenChange(false);
-          router.refresh();
-        }
-      } catch (e) {
-        toast.error("Network error", { description: (e as Error).message });
-      } finally {
-        setBusyKind(null);
+      const result = await apiPost("/api/stripe/apply-stay-discount", {
+        code: "STAY50",
+      });
+      if (!result.ok) {
+        toast.error("Couldn't apply discount", { description: result.error });
+      } else {
+        toast.success("Discount applied — 50% off for 3 months");
+        onOpenChange(false);
+        router.refresh();
       }
+      setBusyKind(null);
     });
   };
 
   const onCancel = () => {
     setBusyKind("cancel");
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/stripe/cancel-subscription", {
-          method: "POST",
-        });
-        const json = await res.json();
-        if (!res.ok) {
-          toast.error("Couldn't cancel", { description: json.error });
-        } else {
-          toast.info("Subscription will end at the current period close");
-          onOpenChange(false);
-          router.refresh();
-        }
-      } catch (e) {
-        toast.error("Network error", { description: (e as Error).message });
-      } finally {
-        setBusyKind(null);
+      const result = await apiPost("/api/stripe/cancel-subscription");
+      if (!result.ok) {
+        toast.error("Couldn't cancel", { description: result.error });
+      } else {
+        toast.info("Subscription will end at the current period close");
+        onOpenChange(false);
+        router.refresh();
       }
+      setBusyKind(null);
     });
   };
 

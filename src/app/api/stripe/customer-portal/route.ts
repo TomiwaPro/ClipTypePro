@@ -13,6 +13,18 @@ import { getStripe, getStripeEnv } from "@/lib/stripe/server";
  * already on file (otherwise there's nothing to manage).
  */
 export async function POST() {
+  try {
+    return await handle();
+  } catch (e) {
+    console.error("[stripe/customer-portal] unhandled:", e);
+    return NextResponse.json(
+      { error: (e as Error)?.message || "Customer-portal route crashed" },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle() {
   const supabase = await createClient();
   const {
     data: { user },

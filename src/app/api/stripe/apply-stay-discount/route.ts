@@ -19,6 +19,18 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    console.error("[stripe/apply-stay-discount] unhandled:", e);
+    return NextResponse.json(
+      { error: (e as Error)?.message || "Apply-stay-discount route crashed" },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle(req: Request) {
   let body: unknown = {};
   try {
     body = await req.json();
