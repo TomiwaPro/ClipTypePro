@@ -84,6 +84,44 @@ npm run start    # Run production build locally
 npm run lint     # ESLint
 ```
 
+## Supabase
+
+The schema lives in `supabase/migrations/001_initial_schema.sql` and seed data
+in `supabase/seed.sql`. **Tested end-to-end against local Postgres 16** — RLS
+isolation, role-based grants, and the `auth.users` insert trigger all verified.
+
+### Apply to a hosted Supabase project (no CLI required)
+
+1. **Create the project** — see runbook in chat history (or re-ask Claude).
+   Paste the URL + anon key + service-role key into `.env.local`.
+2. **Open the SQL Editor** in your project dashboard:
+   `https://supabase.com/dashboard/project/<ref>/sql/new`
+3. **Run the migration**: paste the entire contents of
+   `supabase/migrations/001_initial_schema.sql` → click *Run*. Should finish
+   in <2 s with no errors.
+4. **Run the seed**: paste `supabase/seed.sql` → *Run*. Inserts 25 rows.
+5. **Verify** in *Table Editor* — you should see 9 tables, each with a
+   shield icon (RLS on); `platform_ratings` should have 25 rows.
+
+### Apply via the Supabase CLI (recommended for repeatable deploys)
+
+```bash
+npx supabase login                                  # one-time
+npx supabase link --project-ref <YOUR_REF>          # found in project URL
+npx supabase db push                                # applies all migrations
+psql "$SUPABASE_DB_URL" -f supabase/seed.sql        # one-shot seed
+```
+
+### Generating TypeScript types
+
+After the migration is applied, regenerate `src/types/database.ts`:
+
+```bash
+npx supabase gen types typescript --linked > src/types/database.ts
+```
+
+Re-run any time the schema changes.
+
 ## Design system
 
 v4 tokens live in `src/app/globals.css`:
