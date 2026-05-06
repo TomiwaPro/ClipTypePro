@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GlobalSearch } from "@/components/dashboard/global-search";
+import { MobileBackdrop } from "@/components/dashboard/mobile-backdrop";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
 import { UpgradeModal } from "@/components/dashboard/upgrade-modal";
@@ -16,10 +17,10 @@ type Tier = "free" | "pro" | "teams" | "enterprise";
 /**
  * Shared layout for every page under /dashboard.
  *
- * Loads the profile + unread notification count once, server-side, and
- * passes them as props to the client shell (sidebar, topbar). Avoids
- * double-fetching on each page navigation and keeps the data flow
- * unidirectional.
+ * Loads the profile + unread notification count + content for the global
+ * search palette (platform list, user's snippet titles) once, server-side,
+ * and passes them to the client shell. Avoids double-fetching on each
+ * page navigation and keeps the data flow unidirectional.
  *
  * Defence in depth: middleware should have redirected unauthenticated
  * traffic away, but if we somehow land here without a user, redirect to
@@ -36,19 +37,35 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Profile + tier + trial deadline. Trigger ensures this row exists.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, avatar_url, tier, trial_ends_at, theme_preference")
-    .eq("id", user.id)
-    .single();
-
-  // Unread notifs — count-only query, the partial index handles this fast.
-  const { count: unreadCount } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("read", false);
+  // Fetch everything the shell needs in parallel.
+  const [
+    { data: profile },
+    { count: unreadCount },
+    { data: platforms },
+    { data: snippets },
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, avatar_url, tier, trial_ends_at, theme_preference")
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("read", false),
+    // Public reference data — RLS allows anon SELECT (migration 003).
+    supabase
+      .from("platform_ratings")
+      .select("name, category, risk_level")
+      .order("name"),
+    // RLS already restricts to user's own snippets.
+    supabase
+      .from("snippets")
+      .select("id, title, category")
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
 
   const tier = (profile?.tier ?? "free") as Tier;
   const isFree = tier === "free";
@@ -86,6 +103,8 @@ export default async function DashboardLayout({
         trialDaysLeft={trialDaysLeft}
       />
 
+      <MobileBackdrop />
+
       <div
         style={{
           flex: 1,
@@ -112,7 +131,23 @@ export default async function DashboardLayout({
       </div>
 
       <UpgradeModal />
-      <GlobalSearch isFree={isFree} />
+      <GlobalSearch
+        isFree={isFree}
+        platforms={
+          (platforms ?? []).map((p) => ({
+            name: p.name as string,
+            category: p.category as string,
+            riskLevel: p.risk_level as "green" | "yellow" | "red",
+          }))
+        }
+        snippets={
+          (snippets ?? []).map((s) => ({
+            id: s.id as string,
+            title: s.title as string,
+            category: s.category as string,
+          }))
+        }
+      />
     </div>
   );
 }

@@ -1,20 +1,21 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { CreditCard, LogOut, Settings, User } from "lucide-react";
+import { CreditCard, LogOut, Menu, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { signOutAction } from "@/lib/auth/actions";
-import { ThemeToggle } from "@/components/auth/theme-toggle";
+import { useUIStore } from "./ui-store";
 
 /**
  * Authenticated dashboard topbar.
  *
+ * - Mobile-only hamburger that opens the sidebar drawer
  * - Avatar with user initials (no upload UI yet — Step 6+)
  * - Dropdown: Profile / Billing / Settings / Sign out
- * - Theme toggle (lifted from the auth pages — same component)
  *
- * Avatar/name come from the server layout via props so we don't fetch
- * profile data twice per page.
+ * The theme toggle has moved to the sidebar footer (per the Step 5
+ * verification spec). Avatar/name flow in via server-layout props so
+ * we don't fetch profile data twice per page.
  */
 export function Topbar({
   fullName,
@@ -27,6 +28,7 @@ export function Topbar({
   avatarUrl: string | null;
   tier: "free" | "pro" | "teams" | "enterprise";
 }) {
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const display = fullName?.trim() || email.split("@")[0];
   const initials = display
     .split(/\s+/)
@@ -45,12 +47,34 @@ export function Topbar({
         padding: "0 24px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-end",
+        justifyContent: "space-between",
         gap: 12,
       }}
     >
-      {/* Inline theme toggle (same component as auth pages, just placed inline) */}
-      <ThemeToggle inline />
+      {/* Mobile hamburger — hidden on desktop (sidebar always visible there) */}
+      <button
+        type="button"
+        aria-label="Open navigation menu"
+        onClick={toggleSidebar}
+        className="dashboard-hamburger"
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          background: "var(--c-surface-b)",
+          border: "1px solid var(--c-border)",
+          color: "var(--c-text)",
+          display: "none",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <Menu size={16} />
+      </button>
+
+      {/* Spacer pushes avatar to the right when hamburger is hidden */}
+      <div style={{ flex: 1 }} />
 
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
@@ -198,6 +222,11 @@ export function Topbar({
         .dashboard-menu-item:hover {
           background: color-mix(in srgb, var(--c-primary) 8%, transparent);
           color: var(--c-text);
+        }
+        @media (max-width: 720px) {
+          .dashboard-hamburger {
+            display: inline-flex !important;
+          }
         }
       `}</style>
     </header>

@@ -194,7 +194,7 @@ export function UpgradeModal() {
             <PriceCard
               active={cycle === "annual"}
               price={annualMonthly}
-              period="/ month · billed yearly"
+              period="/ mo · $79 billed yearly"
               accent
               footnote="Save 27%"
             />
