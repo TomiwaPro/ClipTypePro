@@ -3,10 +3,13 @@
 import { useState } from "react";
 import { FAQS } from "@/lib/landing/content";
 
+/**
+ * FAQ accordion. Only one item open at a time (state is `number | null`,
+ * not a Set, so swapping never shows two open). Animated with a CSS grid
+ * trick: the panel container animates `grid-template-rows` from 0fr → 1fr,
+ * which gives a smooth height transition without measuring DOM.
+ */
 export function FAQ() {
-  // null = all closed; otherwise the index of the currently-open question.
-  // Clicking the open one collapses it; clicking another swaps without
-  // ever showing two open at once.
   const [open, setOpen] = useState<number | null>(null);
 
   return (
@@ -16,6 +19,7 @@ export function FAQ() {
         padding: "80px 40px",
         maxWidth: 680,
         margin: "0 auto",
+        scrollMarginTop: 80,
       }}
     >
       <h2
@@ -70,7 +74,7 @@ export function FAQ() {
                     color: "var(--c-primary)",
                     fontSize: 16,
                     transform: isOpen ? "rotate(45deg)" : "none",
-                    transition: "transform .2s",
+                    transition: "transform .25s ease",
                     flexShrink: 0,
                     marginLeft: 14,
                   }}
@@ -79,22 +83,36 @@ export function FAQ() {
                 </span>
               </button>
 
-              {isOpen && (
-                <div
-                  id={`faq-panel-${i}`}
-                  role="region"
-                  aria-labelledby={`faq-trigger-${i}`}
-                  style={{
-                    padding: "0 18px 15px",
-                    fontSize: 13,
-                    color: "var(--c-text-dim)",
-                    lineHeight: 1.65,
-                    borderTop: "1px solid var(--c-border)",
-                  }}
-                >
-                  <div style={{ paddingTop: 12 }}>{f.a}</div>
+              {/*
+                Animated reveal: outer grid track animates from 0fr → 1fr.
+                Inner div has min-height: 0 to allow the grid track to
+                actually collapse to zero — without that the content
+                overflows even when track height is 0.
+              */}
+              <div
+                id={`faq-panel-${i}`}
+                role="region"
+                aria-labelledby={`faq-trigger-${i}`}
+                style={{
+                  display: "grid",
+                  gridTemplateRows: isOpen ? "1fr" : "0fr",
+                  transition: "grid-template-rows .25s ease",
+                }}
+              >
+                <div style={{ minHeight: 0, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      padding: "12px 18px 15px",
+                      fontSize: 13,
+                      color: "var(--c-text-dim)",
+                      lineHeight: 1.65,
+                      borderTop: "1px solid var(--c-border)",
+                    }}
+                  >
+                    {f.a}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           );
         })}

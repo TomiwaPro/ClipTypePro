@@ -130,6 +130,7 @@ export default function LandingPage() {
           background: "var(--c-surface)",
           borderTop: "1px solid var(--c-border)",
           borderBottom: "1px solid var(--c-border)",
+          scrollMarginTop: 80,
         }}
       >
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
@@ -181,8 +182,209 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* PLATFORMS — anchor target for nav "Platforms" */}
+      <section
+        id="platforms"
+        style={{
+          padding: "60px 40px",
+          maxWidth: 900,
+          margin: "0 auto",
+          scrollMarginTop: 80,
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <h2
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 26,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            Smart platform detection
+          </h2>
+          <p style={{ color: "var(--c-text-dim)", fontSize: 14, maxWidth: 520, margin: "0 auto" }}>
+            ClipType Pro rates 25+ platforms. Red-rated sites auto-trigger Stealth Mode. Proctoring software hard-blocks the engine.
+          </p>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: 12,
+            maxWidth: 720,
+            margin: "0 auto",
+          }}
+          className="landing-grid-3"
+        >
+          {(
+            [
+              { name: "Gmail", risk: "green", note: "Fully compatible" },
+              { name: "Slack", risk: "green", note: "No restrictions" },
+              { name: "Notion", risk: "green", note: "All blocks" },
+              { name: "Epic EHR", risk: "yellow", note: "Compliance Mode" },
+              { name: "Salesforce", risk: "yellow", note: "Use Stealth" },
+              { name: "Twitter/X", risk: "red", note: "Bot detection" },
+              { name: "LinkedIn", risk: "red", note: "Sophisticated monitoring" },
+              { name: "Respondus LDB", risk: "red", note: "⛔ Auto-disabled" },
+            ] as const
+          ).map((p) => {
+            const color =
+              p.risk === "green"
+                ? "var(--c-success)"
+                : p.risk === "yellow"
+                  ? "var(--c-warning)"
+                  : "var(--c-danger)";
+            return (
+              <div
+                key={p.name}
+                style={{
+                  background: "var(--c-surface)",
+                  border: "1px solid var(--c-border)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div
+                  aria-hidden="true"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    background: color,
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{p.name}</div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--c-text-muted)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {p.note}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ textAlign: "center", marginTop: 18 }}>
+          <span style={{ fontSize: 12, color: "var(--c-text-muted)" }}>
+            Plus 17 more — full list inside the app.
+          </span>
+        </div>
+      </section>
+
+      {/* API — anchor target for nav "API" */}
+      <section
+        id="api"
+        style={{
+          padding: "60px 40px",
+          background: "var(--c-surface)",
+          borderTop: "1px solid var(--c-border)",
+          borderBottom: "1px solid var(--c-border)",
+          scrollMarginTop: 80,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 760,
+            margin: "0 auto",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 32,
+            alignItems: "center",
+          }}
+          className="landing-grid-2"
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--c-primary)",
+                marginBottom: 8,
+                letterSpacing: 1,
+              }}
+            >
+              FOR DEVELOPERS
+            </div>
+            <h2
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 26,
+                fontWeight: 700,
+                marginBottom: 12,
+                lineHeight: 1.2,
+              }}
+            >
+              Drop our typing engine into your product.
+            </h2>
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--c-text-dim)",
+                lineHeight: 1.7,
+                marginBottom: 16,
+              }}
+            >
+              REST API with 10k calls/month on Pro, 1M on Enterprise. Per-key rate limits, audit logs, webhook events.
+            </p>
+            <a
+              href="#pricing"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "8px 14px",
+                borderRadius: 8,
+                background: "var(--c-surface-b)",
+                border: "1px solid var(--c-border)",
+                color: "var(--c-text)",
+                fontSize: 12,
+                fontWeight: 600,
+                textDecoration: "none",
+              }}
+            >
+              See API pricing →
+            </a>
+          </div>
+          <div
+            style={{
+              background: "var(--c-bg)",
+              border: "1px solid var(--c-border)",
+              borderRadius: 10,
+              padding: 16,
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--c-success)",
+              lineHeight: 1.7,
+              overflowX: "auto",
+            }}
+          >
+            <div style={{ color: "var(--c-text-muted)", marginBottom: 6 }}>
+              {/* prettier-ignore */}
+              {`// POST /v1/type`}
+            </div>
+            {`curl -X POST https://api.cliptypepro.com/v1/type \\
+  -H "Authorization: Bearer ctp_live_…" \\
+  -d '{"text":"Hello","mode":"human"}'`}
+          </div>
+        </div>
+      </section>
+
       {/* PRICING */}
-      <section id="pricing" style={{ padding: "80px 40px", maxWidth: 960, margin: "0 auto" }}>
+      <section
+        id="pricing"
+        style={{ padding: "80px 40px", maxWidth: 960, margin: "0 auto", scrollMarginTop: 80 }}
+      >
         <div style={{ textAlign: "center", marginBottom: 50 }}>
           <h2
             style={{
@@ -528,6 +730,7 @@ export default function LandingPage() {
         @media (max-width: 880px) {
           .landing-pricing-grid { grid-template-columns: 1fr 1fr !important; }
           .landing-features-grid { grid-template-columns: 1fr 1fr !important; }
+          .landing-grid-2 { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 600px) {
           .landing-grid-3 { grid-template-columns: 1fr !important; }

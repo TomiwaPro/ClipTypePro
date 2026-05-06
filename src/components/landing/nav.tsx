@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Moon, Sun } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
+import { useTheme } from "@/components/theme-provider";
 import { NAV_LINKS } from "@/lib/landing/content";
 
 /**
@@ -25,6 +27,8 @@ function serverSnapshot() {
 
 export function Nav() {
   const scrolled = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  const { theme, toggle } = useTheme();
+  const isDark = theme === "dark";
 
   // Smooth scroll for anchor jumps — apply once, idempotent.
   useEffect(() => {
@@ -46,10 +50,12 @@ export function Nav() {
         backdropFilter: scrolled ? "blur(20px) saturate(180%)" : "blur(8px)",
         WebkitBackdropFilter: scrolled ? "blur(20px) saturate(180%)" : "blur(8px)",
         borderBottom: scrolled ? "1px solid var(--c-border)" : "1px solid transparent",
-        padding: "0 40px",
+        // Tighten padding at small widths so logo + buttons + theme toggle don't overflow at 320–375px.
+        padding: "0 clamp(14px, 4vw, 40px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: 12,
         height: 60,
         transition: "background .2s, border-color .2s, backdrop-filter .2s",
       }}
@@ -94,9 +100,31 @@ export function Nav() {
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            background: "var(--c-surface-b)",
+            border: "1px solid var(--c-border)",
+            color: "var(--c-text-dim)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          {isDark ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
         <Link
           href="/login"
+          className="landing-signin-link"
           style={{
             padding: "6px 13px",
             borderRadius: 8,
@@ -123,6 +151,7 @@ export function Nav() {
             textDecoration: "none",
             display: "inline-flex",
             alignItems: "center",
+            whiteSpace: "nowrap",
           }}
         >
           Start free trial →
@@ -130,8 +159,11 @@ export function Nav() {
       </div>
 
       <style>{`
-        @media (max-width: 720px) {
+        @media (max-width: 820px) {
           .landing-nav-links { display: none !important; }
+        }
+        @media (max-width: 380px) {
+          .landing-signin-link { display: none !important; }
         }
       `}</style>
     </nav>
