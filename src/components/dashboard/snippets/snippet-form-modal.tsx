@@ -9,9 +9,9 @@ import { z } from "zod";
 import { toast } from "sonner";
 import {
   createSnippetAction,
-  SNIPPET_CATEGORIES,
   updateSnippetAction,
 } from "@/app/dashboard/snippets/actions";
+import { SNIPPET_CATEGORIES } from "@/app/dashboard/snippets/schema";
 
 /**
  * Create-or-edit snippet modal.

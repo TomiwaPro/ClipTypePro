@@ -1,50 +1,28 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import {
+  type ActionResult,
+  type SnippetInput,
+  snippetSchema,
+} from "./schema";
 
 /**
  * Snippet CRUD server actions.
  *
- * RLS on `snippets` enforces user_id = auth.uid(), so the client can't
- * forge ownership even if it lies about the row id. We re-validate the
- * inputs with zod for clear field-level errors.
+ * Constants and zod schema live in ./schema.ts (NOT here) because
+ * `"use server"` makes every named export a server action — non-
+ * function exports come back as opaque proxies on the client and
+ * can't be iterated. Keep this file action-only.
  *
- * After every mutation we `revalidatePath('/dashboard/snippets')` so
- * the server-rendered list refreshes on the next render — no manual
- * client-side cache invalidation needed.
+ * RLS on `snippets` enforces user_id = auth.uid(), so the client can't
+ * forge ownership even if it lies about a row id. We re-validate input
+ * here for clear field-level errors.
+ *
+ * Every mutation revalidates `/dashboard/snippets` so the next render
+ * picks up the latest list — no client-side cache to invalidate.
  */
-
-export const SNIPPET_CATEGORIES = [
-  "Support",
-  "Email",
-  "Dev",
-  "Healthcare",
-  "Legal",
-  "Sales",
-  "General",
-] as const;
-
-const baseSchema = z.object({
-  title: z
-    .string()
-    .min(1, "Title is required")
-    .max(80, "Keep title under 80 characters"),
-  category: z.enum(SNIPPET_CATEGORIES, {
-    message: "Pick a category",
-  }),
-  content: z
-    .string()
-    .min(1, "Content is required")
-    .max(10_000, "Snippet content can't exceed 10,000 characters"),
-});
-
-export type SnippetInput = z.infer<typeof baseSchema>;
-
-export type ActionResult<T = unknown> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
 function fieldErrorsFromZod(parsed: {
   error: { issues: { path: PropertyKey[]; message: string }[] };
@@ -61,7 +39,7 @@ function fieldErrorsFromZod(parsed: {
 export async function createSnippetAction(
   input: SnippetInput,
 ): Promise<ActionResult<{ id: string }>> {
-  const parsed = baseSchema.safeParse(input);
+  const parsed = snippetSchema.safeParse(input);
   if (!parsed.success) return fieldErrorsFromZod(parsed);
 
   const supabase = await createClient();
@@ -92,7 +70,7 @@ export async function updateSnippetAction(
   input: SnippetInput,
 ): Promise<ActionResult> {
   if (!id) return { ok: false, error: "Missing snippet id." };
-  const parsed = baseSchema.safeParse(input);
+  const parsed = snippetSchema.safeParse(input);
   if (!parsed.success) return fieldErrorsFromZod(parsed);
 
   const supabase = await createClient();
