@@ -122,6 +122,41 @@ npx supabase gen types typescript --linked > src/types/database.ts
 
 Re-run any time the schema changes.
 
+### Connectivity check
+
+After filling in `.env.local` and applying both migrations, hit:
+
+```
+GET /api/health
+```
+
+A healthy response returns HTTP 200 and:
+
+```json
+{
+  "ok": true,
+  "stage": "connected",
+  "platform_ratings_count": 25,
+  "expected": 25,
+  "authenticated": false,
+  "user_id": null
+}
+```
+
+Any other shape (`stage: "env"` / `"client"` / `"query"`) tells you exactly
+where setup is broken.
+
+### Supabase clients
+
+| File | Use from | Auth | RLS |
+|---|---|---|---|
+| `src/lib/supabase/server.ts` | Server Components, Route Handlers, Server Actions | user JWT (via cookies) | applies |
+| `src/lib/supabase/browser.ts` | Client Components | user JWT (via cookies) | applies |
+| `src/lib/supabase/admin.ts` | Webhooks, cron, trusted server work only | service role | **bypassed** |
+
+The admin client is `import "server-only"`-guarded and will refuse to be
+imported into a client bundle.
+
 ## Design system
 
 v4 tokens live in `src/app/globals.css`:
