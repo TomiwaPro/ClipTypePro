@@ -58,7 +58,11 @@ async function handle() {
   try {
     const session = await getStripe().billingPortal.sessions.create({
       customer: profile.stripe_customer_id as string,
-      return_url: `${env.appUrl}/dashboard/billing`,
+      // ?refresh=portal triggers an auto-sync on the billing page so any
+      // changes the user made in the portal (payment method, cancel,
+      // resume, plan switch) are reflected immediately without a manual
+      // refresh.
+      return_url: `${env.appUrl}/dashboard/billing?refresh=portal`,
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {

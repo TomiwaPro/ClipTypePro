@@ -9,7 +9,12 @@ import { BillingClient } from "@/components/dashboard/billing/billing-client";
 
 export const dynamic = "force-dynamic";
 
-type SP = Promise<{ success?: string; cancelled?: string; session_id?: string }>;
+type SP = Promise<{
+  success?: string;
+  cancelled?: string;
+  session_id?: string;
+  refresh?: string;
+}>;
 
 /**
  * Billing page — current plan, plan switcher, coupon, invoice list,
@@ -175,6 +180,9 @@ export default async function BillingPage({
       successFlag={sp.success === "true"}
       cancelledFlag={sp.cancelled === "true"}
       checkoutSessionId={sp.session_id ?? null}
+      // refresh=portal arrives when the user comes back from Stripe's
+      // Customer Portal. Treated like ?success — auto-sync + URL-strip.
+      portalReturnFlag={sp.refresh === "portal"}
       stats={{
         charsTyped: charsCount ?? 0,
         // Naive estimate: every 5 chars = 1 word, 25 WPM manual baseline.

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
+import { formatDate } from "@/lib/format";
 import { ChurnModal } from "./churn-modal";
 
 /**
@@ -52,6 +53,7 @@ export function BillingClient({
   successFlag,
   cancelledFlag,
   checkoutSessionId,
+  portalReturnFlag,
   stats,
 }: {
   tier: "free" | "pro" | "teams" | "enterprise";
@@ -63,6 +65,7 @@ export function BillingClient({
   successFlag: boolean;
   cancelledFlag: boolean;
   checkoutSessionId: string | null;
+  portalReturnFlag: boolean;
   stats: {
     charsTyped: number;
     hoursSaved: number;
@@ -92,21 +95,22 @@ export function BillingClient({
   const cancelled = stripeData.cancelAtPeriodEnd === true;
 
   /**
-   * Auto-sync after a successful checkout.
+   * Auto-sync on mount when:
+   *   - ?success=true       — user just finished checkout
+   *   - ?refresh=portal     — user returned from Stripe Customer Portal
    *
-   * Runs once on mount when ?success=true is in the URL, regardless of
-   * whether the webhook fired. Calls /api/stripe/sync, which pulls the
-   * live subscription from Stripe and writes it to the profile (using
-   * the service-role client). Then strips the URL params and refreshes
-   * the page so the server component re-fetches fresh data.
+   * In both cases, the user may have made a Stripe-side change (paid,
+   * updated card, cancelled, resumed) that we need to mirror to the
+   * profile row before rendering the dashboard with fresh data.
    *
-   * Why this matters in dev: if `stripe listen` isn't running, the
-   * webhook never fires and the user sits on Free forever. With this
-   * effect, the page self-heals from the success redirect alone.
+   * The sync route is idempotent and uses the service-role Supabase
+   * client to bypass RLS on profiles.tier (only the system writes
+   * tier; webhooks + this sync are the only writers).
    */
   const syncedRef = useRef(false);
+  const shouldSync = successFlag || portalReturnFlag;
   useEffect(() => {
-    if (!successFlag || syncedRef.current) return;
+    if (!shouldSync || syncedRef.current) return;
     syncedRef.current = true;
     setSyncBusy(true);
     (async () => {
@@ -116,18 +120,23 @@ export function BillingClient({
       );
       if (!result.ok) {
         toast.error("Sync failed", { description: result.error });
-      } else if (result.data.tier === "pro") {
+      } else if (successFlag && result.data.tier === "pro") {
         toast.success("Welcome to Pro 🎉", {
           description: "Your account is now upgraded.",
         });
+      } else if (portalReturnFlag) {
+        // Stay quiet on portal returns — user hasn't necessarily done
+        // anything that warrants a toast (they might have just clicked
+        // the back arrow). They'll see the updated card / status in the
+        // refreshed UI.
       }
-      // Strip query params either way, then refresh the server component.
-      // This kills the persistent banner-on-refresh problem.
+      // Strip query params either way, then refresh the server component
+      // so the latest profile + Stripe data is read on the next render.
       router.replace("/dashboard/billing");
       router.refresh();
       setSyncBusy(false);
     })();
-  }, [successFlag, checkoutSessionId, router]);
+  }, [shouldSync, successFlag, portalReturnFlag, checkoutSessionId, router]);
 
   /**
    * Manual "Refresh from Stripe" button — fallback for users whose
@@ -288,7 +297,7 @@ export function BillingClient({
         <Banner kind="warning">
           Subscription will end on{" "}
           <strong>
-            {new Date(stripeData.currentPeriodEnd).toLocaleDateString()}
+            {formatDate(stripeData.currentPeriodEnd)}
           </strong>
           . Resume anytime before then via Manage billing.
         </Banner>
@@ -696,7 +705,7 @@ export function BillingClient({
                 {inv.number ?? inv.id}
               </span>
               <span style={{ color: "var(--c-text-dim)" }}>
-                {new Date(inv.created).toLocaleDateString()}
+                {formatDate(inv.created)}
               </span>
               <span
                 style={{
