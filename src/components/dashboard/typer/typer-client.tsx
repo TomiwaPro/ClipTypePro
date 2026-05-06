@@ -2,6 +2,7 @@
 
 import { Lock } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { saveTypingSessionAction } from "@/lib/typer/actions";
 import { useClipboardHistory } from "@/lib/typer/clipboard-history";
 import {
@@ -68,7 +69,6 @@ export function TyperClient({
   const [humanMode, setHumanMode] = useState(true);
   const [windowLock, setWindowLock] = useState(false);
   const [targetPlatform, setTargetPlatform] = useState<string>(TARGET_NONE);
-  const [clipboardError, setClipboardError] = useState<string | null>(null);
 
   // Live metrics
   const [progress, setProgress] = useState(0);
@@ -141,7 +141,19 @@ export function TyperClient({
   }, [windowLock]);
 
   // ─── Helpers ─────────────────────────────────────────────────────────
+  /**
+   * Hard reset: clears output, progress, WPM, character count, all the
+   * refs the engine reads, and any in-flight timer/interval. Also flips
+   * status back to "idle" — without this, editing the source mid-run
+   * would leave a stranded "typing" status with no actual ticks
+   * scheduled (UI lies, looks broken).
+   *
+   * Pause the run first so the recursive tick (if it manages to fire
+   * one more time before its timer is cleared) sees pausedRef=true and
+   * exits without setting state.
+   */
   const resetMetrics = useCallback(() => {
+    pausedRef.current = true;
     setTypedText("");
     setProgress(0);
     setWpm(0);
@@ -156,8 +168,17 @@ export function TyperClient({
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
+    setStatus({ kind: "idle" });
   }, []);
 
+  /**
+   * Persist a session (complete OR stopped early) to typing_sessions.
+   *
+   * Saves both kinds — analytics wants partial runs counted too. If the
+   * server action fails, surface a toast (the user keeps the on-screen
+   * output and can re-export). One naive retry on transient failure;
+   * still failing → toast with the actual error so the user knows.
+   */
   const finalizeAndSave = useCallback(
     async (kind: "complete" | "stopped") => {
       const text = clipRef.current;
@@ -176,20 +197,34 @@ export function TyperClient({
       const finalWpm =
         elapsed > 0 ? Math.round((charsActual / 5) / (elapsed / 60)) : 0;
 
-      // Only persist completed runs — stopped runs are noise for analytics.
-      if (kind === "complete") {
-        await saveTypingSessionAction({
-          charCount: charsActual,
-          wordCount,
-          avgWpm: finalWpm,
-          speedMode: speedRef.current,
-          durationSeconds: elapsed,
-          targetApp:
-            targetPlatform === TARGET_NONE ? null : targetPlatform,
+      setStatus({ kind });
+
+      const payload = {
+        charCount: charsActual,
+        wordCount,
+        avgWpm: finalWpm,
+        speedMode: speedRef.current,
+        durationSeconds: elapsed,
+        targetApp: targetPlatform === TARGET_NONE ? null : targetPlatform,
+      };
+
+      // Try once, then retry once after a short delay before giving up.
+      let result = await saveTypingSessionAction(payload);
+      if (!result.ok) {
+        await new Promise((r) => setTimeout(r, 600));
+        result = await saveTypingSessionAction(payload);
+      }
+      if (!result.ok) {
+        toast.error("Couldn't save session", {
+          description:
+            "Your typed text is still here. " +
+            (result.error || "Please try Export to save manually."),
+        });
+      } else if (kind === "complete") {
+        toast.success("Session saved", {
+          description: `${charsActual.toLocaleString()} chars · ${finalWpm} WPM`,
         });
       }
-
-      setStatus({ kind });
     },
     [targetPlatform],
   );
@@ -267,20 +302,17 @@ export function TyperClient({
 
   // ─── Controls ─────────────────────────────────────────────────────────
   const readClipboard = useCallback(async () => {
-    setClipboardError(null);
     try {
       const text = await navigator.clipboard.readText();
       if (!text || !text.trim()) {
-        setClipboardError("Clipboard is empty.");
+        toast.warning("Clipboard is empty");
         return;
       }
       setClipText(text);
       addToHistory(text);
       resetMetrics();
     } catch {
-      setClipboardError(
-        "Browser denied clipboard access. Either click 'Allow' on the prompt, or paste manually into the source box.",
-      );
+      toast.error("Clipboard access denied — paste text manually");
     }
   }, [addToHistory, resetMetrics]);
 
@@ -312,12 +344,14 @@ export function TyperClient({
 
   const startTyping = useCallback(() => {
     if (!clipText.trim()) {
-      setClipboardError("Source is empty — paste or read clipboard first.");
+      toast.warning("Source is empty — paste or read clipboard first");
       return;
     }
+    // Free + over-limit: do NOT start. Open upgrade modal and bail.
+    // (Verification spec is explicit on this — no partial 1,000-char run.)
     if (isFree && clipText.length > FREE_CHAR_LIMIT) {
-      // Allow them to start; we'll cap mid-run. But surface the upsell now.
-      openUpgrade("free-cap-preview");
+      openUpgrade("free-cap");
+      return;
     }
     if (isFree && SPEED_PRESETS[speed].pro) {
       openUpgrade(speed);
@@ -357,12 +391,19 @@ export function TyperClient({
     tickTimerRef.current = setTimeout(() => tickRef.current(), 50);
   }, []);
 
+  /**
+   * Stop = abort + save partial + reset.
+   *
+   * finalizeAndSave reads indexRef and friends synchronously before its
+   * first await, so it has already snapshotted the work-done numbers
+   * by the time resetMetrics() clobbers the refs. The save still posts
+   * the correct partial counts; the visible state is wiped immediately
+   * so Start is ready for the next run.
+   */
   const onStop = useCallback(() => {
-    pausedRef.current = true;
-    if (tickTimerRef.current) clearTimeout(tickTimerRef.current);
-    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     void finalizeAndSave("stopped");
-  }, [finalizeAndSave]);
+    resetMetrics();
+  }, [finalizeAndSave, resetMetrics]);
 
   const onReset = useCallback(() => {
     resetMetrics();
@@ -374,10 +415,9 @@ export function TyperClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cliptypepro-session-${new Date()
-      .toISOString()
-      .slice(0, 19)
-      .replace(/[:T]/g, "-")}.txt`;
+    // Spec asks for the literal filename — multiple downloads in one
+    // session will get auto-numbered by the browser ("(1)", "(2)").
+    a.download = "cliptypepro-session.txt";
     a.click();
     URL.revokeObjectURL(url);
   }, [typedText]);
@@ -488,7 +528,11 @@ export function TyperClient({
                 fontFamily: "var(--font-mono)",
               }}
             >
-              {clipText.length.toLocaleString()} chars
+              {clipText.length.toLocaleString()} chars ·{" "}
+              {clipText.trim()
+                ? clipText.trim().split(/\s+/).length.toLocaleString()
+                : 0}{" "}
+              words
             </span>
           </div>
           <AutoGrowTextarea
@@ -499,11 +543,6 @@ export function TyperClient({
             }}
             placeholder="Paste text here or click Read Clipboard…"
           />
-          {clipboardError && (
-            <div style={{ fontSize: 11, color: "var(--c-warning)", marginTop: 6 }}>
-              {clipboardError}
-            </div>
-          )}
         </Card>
 
         <Card label="⌨ Live Output">

@@ -7,6 +7,7 @@ import {
   useEffect,
   useSyncExternalStore,
 } from "react";
+import { Toaster } from "sonner";
 
 export type Theme = "dark" | "light";
 
@@ -71,6 +72,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (
     <ThemeContext.Provider value={{ theme, setTheme, toggle }}>
       {children}
+      {/*
+        Sonner toaster lives in the provider so it inherits theme + is
+        available app-wide. richColors gives us proper success/error
+        accents tied to ClipType's primary/danger tokens.
+      */}
+      <Toaster
+        theme={theme}
+        position="bottom-center"
+        richColors
+        closeButton
+      />
     </ThemeContext.Provider>
   );
 }
