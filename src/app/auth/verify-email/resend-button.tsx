@@ -40,7 +40,7 @@ export function ResendButton({ email }: { email: string }) {
       const result = await resendConfirmationAction(email);
       if (result.ok) {
         const cd = result.data?.cooldownSeconds ?? DEFAULT_COOLDOWN;
-        setMessage({ kind: "ok", text: "Sent! Check your inbox again." });
+        setMessage({ kind: "ok", text: "Resent ✓ Check your inbox again." });
         setSecondsLeft(cd);
       } else {
         // Even on failure, start a cooldown so the user can't spam clicks.
@@ -59,7 +59,7 @@ export function ResendButton({ email }: { email: string }) {
   const label = pending
     ? "Sending…"
     : secondsLeft > 0
-      ? `Resend in ${formatRemaining(secondsLeft)}`
+      ? `Resend (${formatRemaining(secondsLeft)})`
       : "Resend verification email";
 
   return (

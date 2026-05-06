@@ -6,6 +6,7 @@ type SearchParams = Promise<{
   next?: string;
   error?: string;
   reset?: string;
+  expired?: string;
 }>;
 
 export default async function LoginPage({
@@ -44,6 +45,22 @@ export default async function LoginPage({
           }}
         >
           ✓ Password updated. Sign in with your new password.
+        </div>
+      )}
+      {sp.expired === "1" && (
+        <div
+          style={{
+            background: "color-mix(in srgb, var(--c-warning) 12%, transparent)",
+            border:
+              "1px solid color-mix(in srgb, var(--c-warning) 40%, transparent)",
+            color: "var(--c-warning)",
+            borderRadius: 7,
+            padding: "10px 12px",
+            fontSize: 12,
+            marginBottom: 16,
+          }}
+        >
+          Session expired. Please sign in again.
         </div>
       )}
       {sp.error && (

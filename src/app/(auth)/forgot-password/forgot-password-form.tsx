@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   fieldErrorStyle,
   fieldInputStyle,
   fieldLabelStyle,
+  ghostButtonStyle,
   primaryButtonStyle,
 } from "@/components/auth/auth-card";
 import { forgotPasswordAction } from "@/lib/auth/actions";
@@ -15,10 +16,21 @@ import {
   type ForgotPasswordInput,
 } from "@/lib/auth/schemas";
 
+const RESEND_COOLDOWN = 60;
+
 export function ForgotPasswordForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendMsg, setResendMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
+
+  // Countdown ticker for resend cooldown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
 
   const {
     register,
@@ -38,8 +50,26 @@ export function ForgotPasswordForm() {
       const result = await forgotPasswordAction(fd);
       if (result.ok) {
         setSentTo(values.email);
+        setResendCooldown(RESEND_COOLDOWN);
       } else {
         setServerError(result.error);
+      }
+    });
+  };
+
+  const onResend = () => {
+    if (!sentTo || resendCooldown > 0 || pending) return;
+    setResendMsg(null);
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("email", sentTo);
+      const result = await forgotPasswordAction(fd);
+      if (result.ok) {
+        setResendMsg({ kind: "ok", text: "Sent again. Check your inbox." });
+        setResendCooldown(RESEND_COOLDOWN);
+      } else {
+        setResendMsg({ kind: "err", text: result.error });
+        setResendCooldown(RESEND_COOLDOWN);
       }
     });
   };
@@ -87,6 +117,40 @@ export function ForgotPasswordForm() {
             </div>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={onResend}
+          disabled={resendCooldown > 0 || pending}
+          style={{
+            ...ghostButtonStyle,
+            marginTop: 14,
+            opacity: resendCooldown > 0 || pending ? 0.55 : 1,
+            cursor: resendCooldown > 0 || pending ? "not-allowed" : "pointer",
+          }}
+        >
+          {pending
+            ? "Sending…"
+            : resendCooldown > 0
+              ? `Resend (${resendCooldown}s)`
+              : "Resend reset email"}
+        </button>
+        {resendMsg && (
+          <div
+            aria-live="polite"
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              textAlign: "center",
+              color:
+                resendMsg.kind === "ok"
+                  ? "var(--c-success)"
+                  : "var(--c-danger)",
+            }}
+          >
+            {resendMsg.text}
+          </div>
+        )}
       </div>
     );
   }

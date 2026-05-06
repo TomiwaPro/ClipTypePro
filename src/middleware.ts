@@ -26,11 +26,17 @@ export async function middleware(request: NextRequest) {
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 
-  // Unauthenticated → bounce off protected pages back to /login
+  // Unauthenticated → bounce off protected pages back to /login.
+  // If we can detect a stale Supabase auth cookie (token expired or refresh
+  // failed mid-session), surface an "expired" hint to the login page.
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname + search);
+    const hadAuthCookie = request.cookies
+      .getAll()
+      .some((c) => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
+    if (hadAuthCookie) url.searchParams.set("expired", "1");
     return NextResponse.redirect(url);
   }
 
@@ -40,6 +46,16 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/dashboard";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // Belt-and-braces: tell the browser to never cache authenticated pages.
+  // Disables bfcache so hitting "back" after sign-out re-runs middleware
+  // and bounces to /login instead of showing the stale dashboard HTML.
+  if (isProtected) {
+    response.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private",
+    );
   }
 
   return response;

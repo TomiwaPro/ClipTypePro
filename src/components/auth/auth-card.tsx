@@ -1,9 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "./theme-toggle";
 
 /**
- * Centered auth card layout shared by every page in the (auth) group.
- * Uses the global theme tokens so it flips with dark/light mode automatically.
+ * Centered auth card layout shared by every auth page (login, signup,
+ * verify-email, forgot-password, reset-password). Uses theme tokens so
+ * it flips with dark/light mode automatically. Includes a top-right
+ * theme toggle so users can switch themes from any auth page.
  */
 export function AuthCard({
   title,
@@ -29,6 +32,7 @@ export function AuthCard({
         fontFamily: "var(--font-sans)",
       }}
     >
+      <ThemeToggle />
       <div style={{ width: "100%", maxWidth: 420 }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <Link

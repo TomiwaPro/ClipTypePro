@@ -61,7 +61,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   const supabase = await createClient();
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
@@ -74,7 +74,14 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   });
   if (error) return { ok: false, error: mapAuthError(error) };
 
-  redirect(`/verify-email?email=${encodeURIComponent(parsed.data.email)}`);
+  // If Supabase returned a session, the project has "Confirm email" OFF —
+  // user is already authenticated. Skip the verify-email holding pen.
+  // Otherwise route to the verification page so they can resend if needed.
+  if (data.session) {
+    revalidatePath("/", "layout");
+    redirect("/dashboard");
+  }
+  redirect(`/auth/verify-email?email=${encodeURIComponent(parsed.data.email)}`);
 }
 
 // ─── Sign in with Google (OAuth) ─────────────────────────────────────────────
