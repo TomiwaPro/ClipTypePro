@@ -118,6 +118,37 @@ export async function GET() {
   if (error) {
     // Surface every available property — empty `message` happens when the
     // failure is a transport/auth shape rather than a SQL exception.
+
+    // When anon fails with 401, also try the service-role key. That tells us
+    // whether the project itself is healthy or specifically the anon key
+    // is broken.
+    let service_role_check: { ok: boolean; status?: number; message?: string } | null = null;
+    if (status === 401 || !error.message) {
+      try {
+        const { createAdminClient } = await import("@/lib/supabase/admin");
+        const admin = createAdminClient();
+        const { error: adminErr, status: adminStatus } = await admin
+          .from("platform_ratings")
+          .select("*", { count: "exact", head: true });
+        service_role_check = {
+          ok: !adminErr,
+          status: adminStatus,
+          message: adminErr?.message ?? undefined,
+        };
+      } catch (e) {
+        service_role_check = { ok: false, message: (e as Error).message };
+      }
+    }
+
+    const cause401 =
+      status === 401
+        ? service_role_check?.ok
+          ? "Project is healthy, but NEXT_PUBLIC_SUPABASE_ANON_KEY is wrong/truncated/swapped. Re-copy the 'anon public' key from Supabase → Project Settings → API."
+          : service_role_check && !service_role_check.ok
+            ? "Both keys rejected — project may be paused, deleted, or API rotated. Check the dashboard."
+            : null
+        : null;
+
     return NextResponse.json(
       {
         ok: false,
@@ -128,8 +159,10 @@ export async function GET() {
         hint: (error as { hint?: string }).hint ?? null,
         http_status: status,
         http_status_text: statusText,
+        service_role_check,
         likely_cause:
-          (error as { code?: string }).code === "PGRST301"
+          cause401 ??
+          ((error as { code?: string }).code === "PGRST301"
             ? "Auth required (RLS) — anon role can't read platform_ratings if you re-keyed the project"
             : (error as { code?: string }).code === "42P01"
               ? "Migration 001 hasn't been applied to this project yet"
@@ -137,7 +170,7 @@ export async function GET() {
                 ? "Authenticated role lacks SELECT — base GRANT may not have been applied"
                 : !error.message
                   ? "Empty error often means the anon key is wrong, project is paused, or the API was rotated"
-                  : null,
+                  : null),
       },
       { status: 500 },
     );
