@@ -1,0 +1,759 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { ChurnModal } from "./churn-modal";
+
+/**
+ * Billing UI — talks to the Stripe API routes and renders Supabase-derived
+ * profile data. The server component wrapping this fetches everything we
+ * need; this is purely UI + side-effects.
+ *
+ * Three core actions:
+ *   Upgrade    → POST /api/stripe/create-checkout-session → window.location = url
+ *   Manage     → POST /api/stripe/customer-portal           → window.location = url
+ *   Cancel     → opens ChurnModal (which then calls cancel or apply-stay-discount)
+ */
+
+type Invoice = {
+  id: string;
+  number: string | null;
+  created: string;
+  total: number;
+  currency: string;
+  status: string | null;
+  hostedUrl: string | null;
+  pdfUrl: string | null;
+};
+
+type StripeData = {
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: string | null;
+  interval?: "month" | "year" | null;
+  paymentMethod?: {
+    brand: string;
+    last4: string;
+    expMonth: number;
+    expYear: number;
+  } | null;
+  invoices?: Invoice[];
+  error?: string | null;
+};
+
+export function BillingClient({
+  tier,
+  subscriptionStatus,
+  stripeReady,
+  monthlyPriceId,
+  annualPriceId,
+  stripeData,
+  successFlag,
+  cancelledFlag,
+  stats,
+}: {
+  tier: "free" | "pro" | "teams" | "enterprise";
+  subscriptionStatus: string | null;
+  stripeReady: boolean;
+  monthlyPriceId: string;
+  annualPriceId: string;
+  stripeData: StripeData;
+  successFlag: boolean;
+  cancelledFlag: boolean;
+  stats: {
+    charsTyped: number;
+    hoursSaved: number;
+    totalSeconds: number;
+    totalChars: number;
+  };
+}) {
+  const [pending, startTransition] = useTransition();
+  const [cycle, setCycle] = useState<"month" | "year">(
+    stripeData.interval === "year" ? "year" : "month",
+  );
+
+  // Coupon input + validated state
+  const [coupon, setCoupon] = useState("");
+  const [couponApplied, setCouponApplied] = useState<{
+    code: string;
+    label: string;
+  } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  const [churnOpen, setChurnOpen] = useState(false);
+
+  const isFree = tier === "free";
+  const onPaid = !isFree;
+  const cancelled = stripeData.cancelAtPeriodEnd === true;
+
+  const onUpgrade = () => {
+    if (!stripeReady) {
+      toast.error("Stripe isn't configured", {
+        description: "Set the STRIPE_* env vars in .env.local.",
+      });
+      return;
+    }
+    const priceId = cycle === "year" ? annualPriceId : monthlyPriceId;
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/stripe/create-checkout-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            priceId,
+            coupon: couponApplied?.code,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.url) {
+          toast.error("Couldn't start checkout", {
+            description: json.error ?? "Try again",
+          });
+          return;
+        }
+        window.location.href = json.url;
+      } catch (e) {
+        toast.error("Network error", { description: (e as Error).message });
+      }
+    });
+  };
+
+  const onManage = () => {
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/stripe/customer-portal", {
+          method: "POST",
+        });
+        const json = await res.json();
+        if (!res.ok || !json.url) {
+          toast.error("Couldn't open billing portal", {
+            description: json.error ?? "Try again",
+          });
+          return;
+        }
+        window.location.href = json.url;
+      } catch (e) {
+        toast.error("Network error", { description: (e as Error).message });
+      }
+    });
+  };
+
+  const onValidateCoupon = async () => {
+    setCouponError(null);
+    if (!coupon.trim()) {
+      setCouponError("Enter a code");
+      return;
+    }
+    try {
+      const res = await fetch("/api/stripe/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: coupon.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setCouponError(json.error ?? "Invalid code");
+        setCouponApplied(null);
+        return;
+      }
+      // Build a friendly label from the discount details
+      const pct = json.percentOff ? `${json.percentOff}% off` : null;
+      const amt =
+        json.amountOff && json.currency
+          ? `${(json.amountOff / 100).toFixed(2)} ${json.currency.toUpperCase()} off`
+          : null;
+      const dur =
+        json.duration === "repeating" && json.durationInMonths
+          ? ` for ${json.durationInMonths} mo`
+          : json.duration === "once"
+            ? " for one cycle"
+            : "";
+      setCouponApplied({
+        code: json.code as string,
+        label: `${pct ?? amt ?? "Discount applied"}${dur}`,
+      });
+      toast.success("Coupon applied", {
+        description: `${pct ?? amt ?? ""}${dur}`,
+      });
+    } catch (e) {
+      setCouponError((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="fade-up" style={{ display: "grid", gap: 14, maxWidth: 720 }}>
+      <div>
+        <h1
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 19,
+            fontWeight: 700,
+            marginBottom: 4,
+          }}
+        >
+          Billing &amp; Subscription
+        </h1>
+        <p style={{ color: "var(--c-text-dim)", fontSize: 13 }}>
+          Manage your plan, payment method, and invoices
+        </p>
+      </div>
+
+      {/* URL flags from checkout return */}
+      {successFlag && (
+        <Banner kind="success">
+          ✓ Welcome to Pro! Your account has been upgraded. It can take a few seconds
+          for the new plan to reflect everywhere — refresh if you don&apos;t see it.
+        </Banner>
+      )}
+      {cancelledFlag && (
+        <Banner kind="warning">
+          Checkout cancelled. No charge was made.
+        </Banner>
+      )}
+      {!stripeReady && (
+        <Banner kind="warning">
+          Stripe isn&apos;t configured yet. Add the STRIPE_* environment
+          variables in <code style={{ fontFamily: "var(--font-mono)" }}>.env.local</code>{" "}
+          and restart the server to enable upgrades.
+        </Banner>
+      )}
+      {stripeData.error && (
+        <Banner kind="warning">
+          Couldn&apos;t reach Stripe: {stripeData.error}
+        </Banner>
+      )}
+      {cancelled && stripeData.currentPeriodEnd && (
+        <Banner kind="warning">
+          Subscription will end on{" "}
+          <strong>
+            {new Date(stripeData.currentPeriodEnd).toLocaleDateString()}
+          </strong>
+          . Resume anytime before then via Manage billing.
+        </Banner>
+      )}
+      {subscriptionStatus === "past_due" && (
+        <Banner kind="danger">
+          Last payment failed. Update your payment method to avoid losing Pro
+          access.
+        </Banner>
+      )}
+
+      {/* Plan card */}
+      <div
+        style={{
+          background: "var(--c-surface)",
+          border: "1px solid var(--c-border)",
+          borderRadius: 10,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13 }}>
+            Plan:{" "}
+            <span
+              style={{
+                color: isFree ? "var(--c-text-dim)" : "var(--c-primary)",
+              }}
+            >
+              {tier.charAt(0).toUpperCase() + tier.slice(1)}
+            </span>
+            {subscriptionStatus && (
+              <span
+                style={{
+                  marginLeft: 10,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  color: "var(--c-text-muted)",
+                  background: "var(--c-surface-b)",
+                  border: "1px solid var(--c-border)",
+                  borderRadius: 3,
+                  padding: "2px 6px",
+                }}
+              >
+                {subscriptionStatus.toUpperCase()}
+              </span>
+            )}
+          </div>
+
+          {/* Monthly / annual toggle (free users picking what to upgrade to,
+              paid users see their current cycle reflected) */}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: 4,
+              borderRadius: 7,
+              border: "1px solid var(--c-border)",
+              background: "var(--c-surface-b)",
+            }}
+          >
+            {(["month", "year"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCycle(c)}
+                disabled={onPaid /* paid users can't switch via this; manage in portal */}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 5,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background:
+                    cycle === c ? "var(--c-surface)" : "transparent",
+                  color:
+                    cycle === c ? "var(--c-text)" : "var(--c-text-dim)",
+                  border:
+                    cycle === c ? "1px solid var(--c-border)" : "none",
+                  cursor: onPaid ? "not-allowed" : "pointer",
+                  opacity: onPaid ? 0.6 : 1,
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                {c === "year" ? "Annual (−27%)" : "Monthly"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 28,
+            fontWeight: 700,
+            color: "var(--c-primary)",
+            marginBottom: 4,
+          }}
+        >
+          {cycle === "month" ? "$9" : "$6.58"}
+          <span
+            style={{
+              fontSize: 13,
+              color: "var(--c-text-muted)",
+              fontFamily: "var(--font-sans)",
+            }}
+          >
+            /mo
+          </span>
+        </div>
+        {cycle === "year" && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--c-success)",
+              marginBottom: 10,
+            }}
+          >
+            $79 billed yearly — save 27%
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          {isFree ? (
+            <button
+              type="button"
+              onClick={onUpgrade}
+              disabled={pending || !stripeReady}
+              style={primaryBtn(pending || !stripeReady)}
+            >
+              {pending ? "Opening checkout…" : "Upgrade to Pro →"}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onManage}
+                disabled={pending}
+                style={ghostBtn(pending)}
+              >
+                {pending ? "Opening…" : "Manage payment method"}
+              </button>
+              {!cancelled && (
+                <button
+                  type="button"
+                  onClick={() => setChurnOpen(true)}
+                  disabled={pending}
+                  style={dangerBtn(pending)}
+                >
+                  Cancel subscription
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Coupon (free users only — paid users use the Stripe portal for changes) */}
+      {isFree && (
+        <div
+          style={{
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
+            borderRadius: 10,
+            padding: 18,
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>
+            Promo / Coupon Code
+          </div>
+          {couponApplied ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 12,
+              }}
+            >
+              <span
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--c-success) 18%, transparent)",
+                  color: "var(--c-success)",
+                  padding: "2px 7px",
+                  borderRadius: 4,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  border:
+                    "1px solid color-mix(in srgb, var(--c-success) 30%, transparent)",
+                }}
+              >
+                APPLIED
+              </span>
+              <span style={{ color: "var(--c-success)" }}>
+                {couponApplied.code} — {couponApplied.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCouponApplied(null);
+                  setCoupon("");
+                }}
+                style={{
+                  marginLeft: "auto",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--c-text-muted)",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  padding: 4,
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={coupon}
+                onChange={(e) => {
+                  setCoupon(e.target.value);
+                  setCouponError(null);
+                }}
+                placeholder="ENTER CODE"
+                onKeyDown={(e) => e.key === "Enter" && onValidateCoupon()}
+                style={{
+                  flex: 1,
+                  background: "var(--c-surface-b)",
+                  border: `1px solid ${couponError ? "var(--c-danger)" : "var(--c-border)"}`,
+                  borderRadius: 7,
+                  padding: "8px 10px",
+                  color: "var(--c-text)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={onValidateCoupon}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 7,
+                  background: "var(--c-primary)",
+                  color: "#000",
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          )}
+          {couponError && (
+            <div
+              style={{ fontSize: 11, color: "var(--c-danger)", marginTop: 6 }}
+            >
+              {couponError}
+            </div>
+          )}
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--c-text-muted)",
+              marginTop: 7,
+            }}
+          >
+            Try: STAY50 · LAUNCH30 · PRO50 (must be configured in your Stripe
+            dashboard)
+          </div>
+        </div>
+      )}
+
+      {/* Payment method */}
+      {onPaid && (
+        <div
+          style={{
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
+            borderRadius: 10,
+            padding: 18,
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>
+            Payment method
+          </div>
+          {stripeData.paymentMethod ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                fontSize: 13,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  background: "var(--c-surface-b)",
+                  border: "1px solid var(--c-border)",
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  textTransform: "uppercase",
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {stripeData.paymentMethod.brand}
+              </div>
+              <span style={{ fontFamily: "var(--font-mono)" }}>
+                •••• {stripeData.paymentMethod.last4}
+              </span>
+              <span style={{ color: "var(--c-text-muted)", fontSize: 11 }}>
+                exp{" "}
+                {String(stripeData.paymentMethod.expMonth).padStart(2, "0")}/
+                {String(stripeData.paymentMethod.expYear).slice(-2)}
+              </span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--c-text-dim)" }}>
+              No card on file. Use Manage payment method to add one.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Invoices */}
+      {onPaid && stripeData.invoices && stripeData.invoices.length > 0 && (
+        <div
+          style={{
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
+            borderRadius: 10,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "13px 16px",
+              borderBottom: "1px solid var(--c-border)",
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            Invoice history
+          </div>
+          {stripeData.invoices.map((inv) => (
+            <div
+              key={inv.id}
+              className="hover-row"
+              style={{
+                padding: "11px 16px",
+                borderBottom: "1px solid var(--c-border)",
+                display: "flex",
+                gap: 14,
+                alignItems: "center",
+                fontSize: 12,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--c-text-muted)",
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {inv.number ?? inv.id}
+              </span>
+              <span style={{ color: "var(--c-text-dim)" }}>
+                {new Date(inv.created).toLocaleDateString()}
+              </span>
+              <span
+                style={{
+                  color: "var(--c-primary)",
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 700,
+                }}
+              >
+                {(inv.total / 100).toFixed(2)} {inv.currency.toUpperCase()}
+              </span>
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  padding: "2px 6px",
+                  borderRadius: 3,
+                  background:
+                    inv.status === "paid"
+                      ? "color-mix(in srgb, var(--c-success) 15%, transparent)"
+                      : "var(--c-surface-b)",
+                  color:
+                    inv.status === "paid"
+                      ? "var(--c-success)"
+                      : "var(--c-text-muted)",
+                  border: `1px solid ${
+                    inv.status === "paid"
+                      ? "color-mix(in srgb, var(--c-success) 30%, transparent)"
+                      : "var(--c-border)"
+                  }`,
+                }}
+              >
+                {(inv.status ?? "—").toUpperCase()}
+              </span>
+              {inv.pdfUrl && (
+                <a
+                  href={inv.pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--c-text-dim)",
+                    textDecoration: "none",
+                    fontSize: 11,
+                  }}
+                  title="Download PDF"
+                >
+                  ↓ PDF
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ChurnModal
+        open={churnOpen}
+        onOpenChange={setChurnOpen}
+        charsTyped={stats.charsTyped || stats.totalChars}
+        hoursSaved={stats.hoursSaved}
+      />
+    </div>
+  );
+}
+
+// ─── Small UI helpers ───────────────────────────────────────────────────────
+
+function Banner({
+  kind,
+  children,
+}: {
+  kind: "success" | "warning" | "danger";
+  children: React.ReactNode;
+}) {
+  const color =
+    kind === "success"
+      ? "var(--c-success)"
+      : kind === "danger"
+        ? "var(--c-danger)"
+        : "var(--c-warning)";
+  return (
+    <div
+      role="status"
+      style={{
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
+        color,
+        borderRadius: 7,
+        padding: "10px 12px",
+        fontSize: 12,
+        lineHeight: 1.55,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function primaryBtn(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "9px 18px",
+    borderRadius: 8,
+    background: "var(--c-primary)",
+    color: "#000",
+    border: "none",
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.6 : 1,
+    fontFamily: "var(--font-sans)",
+  };
+}
+
+function ghostBtn(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "9px 18px",
+    borderRadius: 8,
+    background: "var(--c-surface-b)",
+    color: "var(--c-text)",
+    border: "1px solid var(--c-border)",
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.6 : 1,
+    fontFamily: "var(--font-sans)",
+  };
+}
+
+function dangerBtn(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "9px 18px",
+    borderRadius: 8,
+    background: "color-mix(in srgb, var(--c-danger) 18%, transparent)",
+    color: "var(--c-danger)",
+    border: "1px solid color-mix(in srgb, var(--c-danger) 40%, transparent)",
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.6 : 1,
+    fontFamily: "var(--font-sans)",
+  };
+}
