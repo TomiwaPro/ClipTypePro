@@ -82,22 +82,57 @@ export function Nav() {
         }}
         className="landing-nav-links"
       >
-        {NAV_LINKS.map((l) => (
-          <a
-            key={l.label}
-            href={l.href}
-            className="nav-link"
-            style={{
-              fontSize: 13,
-              color: "var(--c-text-dim)",
-              cursor: "pointer",
-              transition: "color .15s",
-              textDecoration: "none",
-            }}
-          >
-            {l.label}
-          </a>
-        ))}
+        {NAV_LINKS.map((l) =>
+          l.disabled ? (
+            <span
+              key={l.label}
+              aria-disabled="true"
+              title="Coming soon"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 13,
+                color: "var(--c-text-muted)",
+                cursor: "not-allowed",
+                textDecoration: "none",
+              }}
+            >
+              {l.label}
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  background: "color-mix(in srgb, var(--c-warning) 15%, transparent)",
+                  color: "var(--c-warning)",
+                  border: "1px solid color-mix(in srgb, var(--c-warning) 30%, transparent)",
+                }}
+              >
+                SOON
+              </span>
+            </span>
+          ) : (
+            <a
+              key={l.label}
+              href={l.href}
+              className="nav-link"
+              style={{
+                fontSize: 13,
+                color: "var(--c-text-dim)",
+                cursor: "pointer",
+                transition: "color .15s",
+                textDecoration: "none",
+              }}
+            >
+              {l.label}
+            </a>
+          ),
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
