@@ -491,15 +491,13 @@ export function TyperClient({
               {clipText.length.toLocaleString()} chars
             </span>
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={clipText}
-            onChange={(e) => {
-              setClipText(e.target.value);
+            onChange={(v) => {
+              setClipText(v);
               resetMetrics();
             }}
             placeholder="Paste text here or click Read Clipboard…"
-            spellCheck={false}
-            style={textAreaStyle()}
           />
           {clipboardError && (
             <div style={{ fontSize: 11, color: "var(--c-warning)", marginTop: 6 }}>
@@ -897,24 +895,6 @@ const labelStyle = {
   textTransform: "uppercase" as const,
 };
 
-function textAreaStyle() {
-  return {
-    width: "100%",
-    background: "var(--c-surface-b)",
-    border: "1px solid var(--c-border)",
-    borderRadius: 7,
-    padding: "10px 12px",
-    color: "var(--c-text)",
-    fontFamily: "var(--font-mono)",
-    fontSize: 12,
-    lineHeight: 1.65,
-    resize: "vertical" as const,
-    outline: "none",
-    boxSizing: "border-box" as const,
-    height: 150,
-  };
-}
-
 /**
  * Read-only live-output surface.
  *
@@ -970,6 +950,83 @@ function OutputView({ text, complete }: { text: string; complete: boolean }) {
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * Auto-growing source textarea.
+ *
+ * Mirrors the read-only OutputView's behaviour for the editable side:
+ * grows naturally with content, caps at 60vh, internal-scrolls past
+ * the cap. Same min height (150px) so an empty state feels intentional.
+ *
+ * Implementation note: a real <textarea> doesn't grow with content
+ * natively — we reset height to "auto" so scrollHeight reflects pure
+ * content size, then set height to that. The CSS max-height clamps the
+ * visible box and CSS overflow-y handles the scroll past the cap.
+ *
+ * Re-measures on:
+ *   - value change (paste, history-click, manual edit)
+ *   - window resize (line wrapping changes column width)
+ */
+function AutoGrowTextarea({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 1. reset so scrollHeight reports natural content height
+    // 2. set height to that (max-height CSS clamps it; overflow-y scrolls past)
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const el = ref.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      spellCheck={false}
+      style={{
+        width: "100%",
+        background: "var(--c-surface-b)",
+        border: "1px solid var(--c-border)",
+        borderRadius: 7,
+        padding: "10px 12px",
+        color: "var(--c-text)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 12,
+        lineHeight: 1.65,
+        outline: "none",
+        boxSizing: "border-box",
+        minHeight: 150,
+        maxHeight: "clamp(200px, 60vh, 600px)",
+        overflowY: "auto",
+        // We control height via JS — disable manual drag handle so the
+        // user's resize doesn't fight the next auto-measurement.
+        resize: "none",
+      }}
+    />
   );
 }
 
