@@ -76,6 +76,19 @@ export function BillingClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [syncBusy, setSyncBusy] = useState(false);
+
+  // Last successful sync's diagnostic payload — used by the diagnostic
+  // panel to show the user what we found so they (and we) can debug
+  // any state mismatch without chasing dismissed toasts.
+  type SyncDebug = {
+    discoverySource: "session" | "profile" | "email-lookup" | "none";
+    foundCustomerId: string | null;
+    foundSubscriptionId: string | null;
+    writtenTier?: string;
+    writtenStatus?: string | null;
+    note?: string;
+  };
+  const [lastSync, setLastSync] = useState<SyncDebug | null>(null);
   const [cycle, setCycle] = useState<"month" | "year">(
     stripeData.interval === "year" ? "year" : "month",
   );
@@ -114,7 +127,14 @@ export function BillingClient({
     syncedRef.current = true;
     setSyncBusy(true);
     (async () => {
-      const result = await apiPost<{ tier: string; subscriptionStatus?: string | null }>(
+      type SyncResponse = {
+        ok: boolean;
+        tier: string;
+        subscriptionStatus?: string | null;
+        note?: string;
+        debug?: SyncDebug;
+      };
+      const result = await apiPost<SyncResponse>(
         "/api/stripe/sync",
         checkoutSessionId ? { sessionId: checkoutSessionId } : {},
       );
@@ -124,11 +144,21 @@ export function BillingClient({
         toast.success("Welcome to Pro 🎉", {
           description: "Your account is now upgraded.",
         });
+      } else if (successFlag && result.data.tier !== "pro") {
+        // Stripe didn't show an active subscription. Most likely the
+        // checkout session is still finalising (rare race) or something
+        // is misconfigured. The diagnostic banner below will show details.
+        toast.warning("Sync ran but Stripe doesn't show an active subscription yet", {
+          description: result.data.note ?? "Check the diagnostic panel below.",
+        });
       } else if (portalReturnFlag) {
         // Stay quiet on portal returns — user hasn't necessarily done
         // anything that warrants a toast (they might have just clicked
         // the back arrow). They'll see the updated card / status in the
         // refreshed UI.
+      }
+      if (result.ok && result.data.debug) {
+        setLastSync(result.data.debug);
       }
       // Strip query params either way, then refresh the server component
       // so the latest profile + Stripe data is read on the next render.
@@ -146,19 +176,32 @@ export function BillingClient({
   const onRefreshFromStripe = () => {
     setSyncBusy(true);
     (async () => {
-      const result = await apiPost<{ tier: string; subscriptionStatus?: string | null }>(
-        "/api/stripe/sync",
-      );
+      type SyncResponse = {
+        ok: boolean;
+        tier: string;
+        subscriptionStatus?: string | null;
+        note?: string;
+        debug?: SyncDebug;
+      };
+      const result = await apiPost<SyncResponse>("/api/stripe/sync");
       if (!result.ok) {
         toast.error("Couldn't sync from Stripe", { description: result.error });
       } else {
-        toast.success("Synced", {
-          description: `Tier: ${result.data.tier}${
-            result.data.subscriptionStatus
-              ? ` · ${result.data.subscriptionStatus}`
-              : ""
-          }`,
-        });
+        const note = result.data.note;
+        const tier = result.data.tier;
+        toast.success(
+          tier === "pro" ? "Synced — you're on Pro" : "Synced from Stripe",
+          {
+            description: note
+              ? note
+              : `Tier: ${tier}${
+                  result.data.subscriptionStatus
+                    ? ` · ${result.data.subscriptionStatus}`
+                    : ""
+                }`,
+          },
+        );
+        if (result.data.debug) setLastSync(result.data.debug);
         router.refresh();
       }
       setSyncBusy(false);
@@ -264,6 +307,20 @@ export function BillingClient({
           Manage your plan, payment method, and invoices
         </p>
       </div>
+
+      {/*
+        Diagnostic panel — surfaces what the last sync found so the user
+        (and we) can see why the page state might disagree with what they
+        just did on Stripe. Shows when there's an obvious mismatch or
+        when the user explicitly asked for a refresh.
+      */}
+      {lastSync && (
+        <DiagnosticPanel
+          tier={tier}
+          lastSync={lastSync}
+          onDismiss={() => setLastSync(null)}
+        />
+      )}
 
       {/* URL flags from checkout return.
           The ?success=true banner only shows while the auto-sync is in
@@ -800,6 +857,152 @@ export function BillingClient({
 }
 
 // ─── Small UI helpers ───────────────────────────────────────────────────────
+
+/**
+ * Diagnostic panel that shows what the last sync found.
+ *
+ * Visible after any explicit Refresh from Stripe and after the auto-sync
+ * fires on ?success=true. Lets the user (and us) see — without chasing
+ * a dismissed toast — what's stored on profile vs what Stripe believes.
+ *
+ * The most useful signal is `discoverySource`: tells us which strategy
+ * actually located the customer record. If "none", the user genuinely
+ * has no Stripe customer (e.g. checkout was never completed).
+ */
+function DiagnosticPanel({
+  tier,
+  lastSync,
+  onDismiss,
+}: {
+  tier: "free" | "pro" | "teams" | "enterprise";
+  lastSync: {
+    discoverySource: "session" | "profile" | "email-lookup" | "none";
+    foundCustomerId: string | null;
+    foundSubscriptionId: string | null;
+    writtenTier?: string;
+    writtenStatus?: string | null;
+    note?: string;
+  };
+  onDismiss: () => void;
+}) {
+  const stillFreeAfterSync =
+    lastSync.writtenTier === "free" || tier === "free";
+  const tone = stillFreeAfterSync && lastSync.discoverySource === "none"
+    ? "warning"
+    : stillFreeAfterSync
+      ? "warning"
+      : "success";
+  const color =
+    tone === "success" ? "var(--c-success)" : "var(--c-warning)";
+
+  return (
+    <div
+      role="status"
+      style={{
+        background: `color-mix(in srgb, ${color} 8%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
+        borderRadius: 8,
+        padding: 14,
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 13, color }}>
+          {tone === "success"
+            ? "✓ Synced from Stripe"
+            : "Sync ran — but state may be off"}
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "var(--c-text-muted)",
+            cursor: "pointer",
+            fontSize: 14,
+            padding: 4,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "max-content 1fr",
+          gap: "4px 12px",
+          fontSize: 11,
+          color: "var(--c-text-dim)",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
+        <span>tier (after)</span>
+        <span style={{ color: "var(--c-text)" }}>{tier}</span>
+
+        <span>discovery</span>
+        <span style={{ color: "var(--c-text)" }}>
+          {lastSync.discoverySource}
+        </span>
+
+        <span>customer</span>
+        <span style={{ color: "var(--c-text)" }}>
+          {lastSync.foundCustomerId ?? "—"}
+        </span>
+
+        <span>subscription</span>
+        <span style={{ color: "var(--c-text)" }}>
+          {lastSync.foundSubscriptionId ?? "—"}
+        </span>
+
+        {lastSync.writtenStatus !== undefined && (
+          <>
+            <span>status</span>
+            <span style={{ color: "var(--c-text)" }}>
+              {lastSync.writtenStatus ?? "—"}
+            </span>
+          </>
+        )}
+      </div>
+
+      {lastSync.note && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--c-text-dim)",
+            lineHeight: 1.55,
+          }}
+        >
+          {lastSync.note}
+        </div>
+      )}
+
+      {stillFreeAfterSync && lastSync.discoverySource === "none" && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--c-text-dim)",
+            lineHeight: 1.55,
+          }}
+        >
+          We searched by Checkout session, profile, and your email. Stripe
+          doesn&apos;t have a customer for this account yet — most likely the
+          last Checkout wasn&apos;t completed. Click <strong>Upgrade to Pro →</strong>{" "}
+          to try again.
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Banner({
   kind,
