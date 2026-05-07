@@ -163,8 +163,15 @@ export function BillingClient({
         // the back arrow). They'll see the updated card / status in the
         // refreshed UI.
       }
+      // Show the diagnostic panel only when something is actually off.
+      // A clean Welcome-to-Pro or silent portal return doesn't need it —
+      // it reads like an alarm and confuses users on the happy path.
       if (result.ok && result.data.debug) {
-        setLastSync(result.data.debug);
+        const stripeFoundActiveSub = result.data.tier === "pro";
+        const somethingOff =
+          (successFlag && !stripeFoundActiveSub) ||
+          (portalReturnFlag && result.data.debug.discoverySource === "none");
+        if (somethingOff) setLastSync(result.data.debug);
       }
       // Strip query params either way, then refresh the server component
       // so the latest profile + Stripe data is read on the next render.
