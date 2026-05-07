@@ -227,7 +227,6 @@ export function BillingClient({
                 }`,
           },
         );
-        if (result.data.debug) setLastSync(result.data.debug);
         router.refresh();
       }
       setSyncBusy(false);
