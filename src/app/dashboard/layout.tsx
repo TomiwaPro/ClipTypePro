@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { BfcacheReload } from "@/components/dashboard/bfcache-reload";
 import { GlobalSearch } from "@/components/dashboard/global-search";
 import { MobileBackdrop } from "@/components/dashboard/mobile-backdrop";
 import { Sidebar } from "@/components/dashboard/sidebar";
@@ -130,6 +131,7 @@ export default async function DashboardLayout({
         </main>
       </div>
 
+      <BfcacheReload />
       <UpgradeModal />
       <GlobalSearch
         isFree={isFree}
