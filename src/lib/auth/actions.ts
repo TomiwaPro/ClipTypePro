@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuthError } from "./error-map";
 import { recordReferralFromCookie } from "./referral";
+import { claimTeamInviteFromCookie } from "./team-invite";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -80,6 +81,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   // email confirmation is required, before the session is granted).
   if (data.user?.id) {
     await recordReferralFromCookie(data.user.id, parsed.data.email);
+    await claimTeamInviteFromCookie(data.user.id, parsed.data.email);
   }
 
   // If Supabase returned a session, the project has "Confirm email" OFF —
