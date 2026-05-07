@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { hasProAccess } from "@/lib/dashboard/access";
 import { ComplianceClient } from "@/components/dashboard/compliance/compliance-client";
 import { StubPage } from "@/components/dashboard/stub-page";
 
@@ -7,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Compliance — toggles persist to profiles via migration 005's columns.
- * Pro-locked: free users see the upgrade panel.
+ * Pro-locked, but the 14-day signup trial counts as Pro access (see
+ * hasProAccess for the rationale).
  */
 export default async function CompliancePage() {
   const supabase = await createClient();
@@ -18,16 +20,13 @@ export default async function CompliancePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("tier, compliance_mode, hipaa_baa_accepted, gdpr_dpa_accepted")
+    .select(
+      "tier, trial_ends_at, subscription_status, compliance_mode, hipaa_baa_accepted, gdpr_dpa_accepted",
+    )
     .eq("id", user.id)
     .single();
-  const tier = (profile?.tier ?? "free") as
-    | "free"
-    | "pro"
-    | "teams"
-    | "enterprise";
 
-  if (tier === "free") {
+  if (!hasProAccess(profile ?? {})) {
     return (
       <StubPage
         title="Compliance Mode"

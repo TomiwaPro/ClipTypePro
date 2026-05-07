@@ -1,15 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useUIStore } from "./ui-store";
 
 /**
- * Reusable placeholder for dashboard pages whose real content ships in
- * a later step. Renders a heading, subtitle, and a small "what you'll
- * get" panel so the route never feels broken.
- *
- * Free users hitting a Pro-locked page see an inline upgrade prompt
- * instead of empty content.
+ * Reusable placeholder for Pro-locked pages a free user can't access yet.
+ * Renders a heading, subtitle, the "🔒 Pro feature → Upgrade" prompt,
+ * and a "what you'll get" panel.
  */
 export function StubPage({
   title,
@@ -124,22 +120,6 @@ export function StubPage({
         </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 16,
-          fontSize: 12,
-          color: "var(--c-text-muted)",
-        }}
-      >
-        Sidebar nav, search (⌘K), avatar dropdown, sign-out, theme toggle —
-        all working now. Try them.{" "}
-        <Link
-          href="/"
-          style={{ color: "var(--c-primary)", textDecoration: "none" }}
-        >
-          ← Back to landing
-        </Link>
-      </div>
     </div>
   );
 }

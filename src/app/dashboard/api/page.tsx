@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { hasProAccess } from "@/lib/dashboard/access";
 import {
   type ApiKeyRow,
   ApiClient,
@@ -27,16 +28,11 @@ export default async function ApiPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("tier")
+    .select("tier, trial_ends_at, subscription_status")
     .eq("id", user.id)
     .single();
-  const tier = (profile?.tier ?? "free") as
-    | "free"
-    | "pro"
-    | "teams"
-    | "enterprise";
 
-  if (tier === "free") {
+  if (!hasProAccess(profile ?? {})) {
     return (
       <StubPage
         title="API Portal"

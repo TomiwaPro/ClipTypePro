@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { hasProAccess } from "@/lib/dashboard/access";
 import { BfcacheReload } from "@/components/dashboard/bfcache-reload";
 import { GlobalSearch } from "@/components/dashboard/global-search";
 import { MobileBackdrop } from "@/components/dashboard/mobile-backdrop";
@@ -48,7 +49,9 @@ export default async function DashboardLayout({
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("full_name, avatar_url, tier, trial_ends_at, theme_preference")
+      .select(
+        "full_name, avatar_url, tier, trial_ends_at, subscription_status, theme_preference",
+      )
       .eq("id", user.id)
       .single(),
     supabase
@@ -70,7 +73,10 @@ export default async function DashboardLayout({
   ]);
 
   const tier = (profile?.tier ?? "free") as Tier;
-  const isFree = tier === "free";
+  // "Free" for sidebar / global-search purposes means "no Pro access".
+  // hasProAccess respects the 14-day signup trial so trial users don't
+  // get the upgrade modal interception when they click Pro-locked nav.
+  const isFree = !hasProAccess(profile ?? {});
 
   // Days remaining in trial (only meaningful on free tier, but the
   // sidebar shows it for non-free too so we compute it always).
@@ -103,6 +109,7 @@ export default async function DashboardLayout({
         tier={tier}
         unreadCount={unreadCount ?? 0}
         trialDaysLeft={trialDaysLeft}
+        isFree={isFree}
       />
 
       <MobileBackdrop />
