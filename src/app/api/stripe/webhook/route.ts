@@ -142,6 +142,38 @@ async function handleCheckoutCompleted(
     })
     .eq("id", userId);
 
+  // Referral conversion. If this user was referred (a referrals row
+  // exists with referred_user_id = userId and status in pending/signed_up),
+  // flip it to converted and credit the referrer one earned_month.
+  //
+  // Idempotency: the .in("status", ...) filter on the UPDATE ensures a
+  // replay of this webhook (or a re-upgrade after cancellation) only
+  // affects 0 rows and silently no-ops, so the referrer doesn't get
+  // double-credited.
+  try {
+    const { data: pending } = await admin
+      .from("referrals")
+      .select("id, earned_months")
+      .eq("referred_user_id", userId)
+      .in("status", ["pending", "signed_up"])
+      .limit(1)
+      .maybeSingle();
+    if (pending) {
+      const next =
+        ((pending.earned_months as number | null) ?? 0) + 1;
+      await admin
+        .from("referrals")
+        .update({ status: "converted", earned_months: next })
+        .eq("id", pending.id)
+        .in("status", ["pending", "signed_up"]);
+    }
+  } catch (e) {
+    console.warn(
+      "[stripe-webhook] referral conversion failed (non-fatal):",
+      (e as Error).message,
+    );
+  }
+
   // Defensive cleanup: cancel any other live subs on this customer.
   // Users who clicked Upgrade multiple times (or whose webhook history
   // is messy) can end up with multiple parallel subscriptions billing

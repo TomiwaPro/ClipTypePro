@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuthError } from "./error-map";
+import { recordReferralFromCookie } from "./referral";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -73,6 +74,13 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     },
   });
   if (error) return { ok: false, error: mapAuthError(error) };
+
+  // Best-effort: if a referral cookie is set, record the row now. We
+  // pass the new user.id from the signUp response (populated even when
+  // email confirmation is required, before the session is granted).
+  if (data.user?.id) {
+    await recordReferralFromCookie(data.user.id, parsed.data.email);
+  }
 
   // If Supabase returned a session, the project has "Confirm email" OFF —
   // user is already authenticated. Skip the verify-email holding pen.
