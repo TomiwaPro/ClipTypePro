@@ -146,11 +146,14 @@ export function BillingClient({
       );
       if (!result.ok) {
         toast.error("Sync failed", { description: result.error });
-      } else if (successFlag && result.data.tier === "pro") {
+        setSyncBusy(false);
+        return;
+      }
+      if (successFlag && result.data.tier === "pro") {
         toast.success("Welcome to Pro 🎉", {
           description: "Your account is now upgraded.",
         });
-      } else if (successFlag && result.data.tier !== "pro") {
+      } else if (successFlag) {
         // Stripe didn't show an active subscription. Most likely the
         // checkout session is still finalising (rare race) or something
         // is misconfigured. The diagnostic banner below will show details.
@@ -166,18 +169,28 @@ export function BillingClient({
       // Show the diagnostic panel only when something is actually off.
       // A clean Welcome-to-Pro or silent portal return doesn't need it —
       // it reads like an alarm and confuses users on the happy path.
-      if (result.ok && result.data.debug) {
+      if (result.data.debug) {
         const stripeFoundActiveSub = result.data.tier === "pro";
         const somethingOff =
           (successFlag && !stripeFoundActiveSub) ||
           (portalReturnFlag && result.data.debug.discoverySource === "none");
         if (somethingOff) setLastSync(result.data.debug);
       }
-      // Strip query params either way, then refresh the server component
-      // so the latest profile + Stripe data is read on the next render.
-      router.replace("/dashboard/billing");
-      router.refresh();
-      setSyncBusy(false);
+      // Hard reload to /dashboard/billing (no query params).
+      //
+      // Why not router.replace + router.refresh: the App Router caches
+      // the RSC payload for /dashboard/billing client-side. After a
+      // portal cancellation, replace() shows that cached pre-cancel
+      // payload, and a chained refresh() doesn't reliably override it.
+      // A hard nav bypasses the router cache entirely and forces a
+      // fresh server fetch — which now reads the updated profile (just
+      // written by /api/stripe/sync) and re-pulls the subscription
+      // from Stripe with cancel_at_period_end correctly populated.
+      //
+      // Cost is one extra full page load on the post-checkout / post-
+      // portal path, which is fine — these are infrequent transitions
+      // and correctness matters more than the RSC-update speedup.
+      window.location.replace("/dashboard/billing");
     })();
   }, [shouldSync, successFlag, portalReturnFlag, checkoutSessionId, router]);
 
