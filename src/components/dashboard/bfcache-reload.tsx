@@ -18,27 +18,24 @@ import { useEffect } from "react";
  * canonical detection is `pageshow` with `event.persisted === true`,
  * but Chrome and Safari don't fire `persisted: true` reliably when
  * `Cache-Control: no-store` is set (which we do on protected routes
- * via middleware). Net result: the page comes back alive but state
- * is stale and we never know.
+ * via middleware). Net result: pageshow fires with persisted=false even
+ * though the page is showing pre-nav React state.
  *
- * Two complementary detections, both protected by a one-shot flag so
- * we never loop:
+ * Strategy: a single `pageshow` listener that reloads when EITHER
  *
- *   1. Classic bfcache — `pageshow` with `persisted === true`.
- *      Fires reliably on Firefox; sometimes on Chrome.
+ *   1. `event.persisted === true` (classic bfcache)
+ *   2. `document.referrer` matches a Stripe URL (Chrome's "stale
+ *      paint but no persisted flag" case after a Stripe round-trip)
  *
- *   2. Stripe referrer — on mount, if document.referrer points to any
- *      Stripe domain, force a reload. Catches Chrome's "non-bfcache
- *      stale render" case where pageshow doesn't fire with persisted
- *      but the page is still showing pre-nav React state.
+ * `pageshow` fires on the initial paint AND on every bfcache restore,
+ * so this handler covers both. Putting the referrer check inside the
+ * listener (rather than at mount only) is the key: on bfcache restore
+ * the original useEffect doesn't re-run, but the pageshow listener
+ * registered by it still fires.
  *
  * Loop protection: a sessionStorage key is set just before reload and
- * checked on the next mount. If we've just reloaded, we don't reload
- * again — even if the referrer still points at Stripe (it does, after
- * a reload, until the user navigates away). One-shot, then cleared.
- *
- * Mounted from the dashboard layout so every authenticated route gets
- * the same protection.
+ * cleared on the next mount. If we've just reloaded, we don't reload
+ * again — even if the referrer still points at Stripe.
  */
 
 const STRIPE_REFERRER_PATTERNS = [
@@ -53,7 +50,6 @@ const ONESHOT_KEY = "ctp_bfcache_reloaded";
 function reloadOnce(reason: string): void {
   try {
     if (sessionStorage.getItem(ONESHOT_KEY)) {
-      // Already reloaded once for this back-nav — don't loop.
       sessionStorage.removeItem(ONESHOT_KEY);
       return;
     }
@@ -67,34 +63,43 @@ function reloadOnce(reason: string): void {
   window.location.reload();
 }
 
+function fromStripe(): boolean {
+  try {
+    const ref = document.referrer || "";
+    return Boolean(ref) && STRIPE_REFERRER_PATTERNS.some((p) => ref.includes(p));
+  } catch {
+    return false;
+  }
+}
+
 export function BfcacheReload() {
   useEffect(() => {
-    // ─── First: clear a stale one-shot flag from a previous reload ──
-    // If we just reloaded ourselves (the flag is set), pop it and stop.
+    let justReloaded = false;
     try {
       if (sessionStorage.getItem(ONESHOT_KEY)) {
         sessionStorage.removeItem(ONESHOT_KEY);
-        return;
+        justReloaded = true;
       }
     } catch {
       /* noop */
     }
 
-    // ─── Stripe referrer fallback ────────────────────────────────────
-    // Catch Chrome's "stale state but no bfcache signal" scenario.
-    try {
-      const ref = document.referrer || "";
-      if (ref && STRIPE_REFERRER_PATTERNS.some((p) => ref.includes(p))) {
-        reloadOnce("stripe-referrer");
-        return;
-      }
-    } catch {
-      /* noop */
+    // Mount-time fallback: pageshow fires before useEffect runs on the
+    // very first paint, so the listener below would miss it. Catch the
+    // initial fresh-load-from-Stripe case here.
+    if (!justReloaded && fromStripe()) {
+      reloadOnce("stripe-referrer-mount");
+      return;
     }
 
-    // ─── Classic bfcache detection ───────────────────────────────────
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) reloadOnce("bfcache");
+      if (e.persisted) {
+        reloadOnce("bfcache");
+        return;
+      }
+      if (fromStripe()) {
+        reloadOnce("stripe-referrer-pageshow");
+      }
     };
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
