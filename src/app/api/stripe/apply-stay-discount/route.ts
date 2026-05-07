@@ -6,12 +6,18 @@ import { getStripe } from "@/lib/stripe/server";
 /**
  * POST /api/stripe/apply-stay-discount
  *
- * The "save offer" the ChurnModal makes when the user clicks Cancel.
- * Looks up the promotion code (default: STAY50), resolves to its
- * Coupon, and attaches that coupon to the user's existing subscription
- * for the next N billing cycles (per the coupon's duration setting).
+ * Win-back endpoint that does two things in one call:
+ *   1. Attaches the resolved coupon to the user's existing subscription.
+ *   2. Clears any pending cancellation (cancel_at_period_end and cancel_at).
  *
- * The user keeps Pro at the discounted rate. We don't cancel.
+ * Both surfaces hit this:
+ *   - ChurnModal "Keep Pro at 50% off" — pre-cancel save offer. The
+ *     subscription is not yet cancelled, so step 2 is a no-op.
+ *   - Resume-with-discount panel on the billing page — shown to users
+ *     who already cancelled but are still in the grace period and want
+ *     to undo + apply a code in one move.
+ *
+ * The user keeps Pro at the discounted rate.
  */
 
 const schema = z.object({
@@ -93,6 +99,11 @@ async function handle(req: Request) {
       // we don't stack discounts if the user clicks the offer multiple
       // times.
       discounts: [{ coupon: couponId }],
+      // Resume if a pending cancellation exists. Setting these on a
+      // non-cancelled sub is a no-op, so the pre-cancel ChurnModal call
+      // still works as before.
+      cancel_at_period_end: false,
+      cancel_at: null,
     });
     return NextResponse.json({ ok: true, applied: parsed.data.code.toUpperCase() });
   } catch (e) {

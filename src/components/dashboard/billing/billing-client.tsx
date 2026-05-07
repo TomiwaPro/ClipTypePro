@@ -99,13 +99,18 @@ export function BillingClient({
     stripeData.interval === "year" ? "year" : "month",
   );
 
-  // Coupon input + validated state
+  // Coupon input + validated state (free-user upgrade path)
   const [coupon, setCoupon] = useState("");
   const [couponApplied, setCouponApplied] = useState<{
     code: string;
     label: string;
   } | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+
+  // Resume-with-discount panel state (cancelled-but-still-Pro path)
+  const [resumeCoupon, setResumeCoupon] = useState("");
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const [resumeBusy, setResumeBusy] = useState(false);
 
   const [churnOpen, setChurnOpen] = useState(false);
 
@@ -273,6 +278,33 @@ export function BillingClient({
       }
       window.location.href = result.data.url;
     });
+  };
+
+  const onResumeWithDiscount = () => {
+    setResumeError(null);
+    const code = resumeCoupon.trim();
+    if (!code) {
+      setResumeError("Enter a code");
+      return;
+    }
+    setResumeBusy(true);
+    (async () => {
+      const result = await apiPost<{ ok: true; applied: string }>(
+        "/api/stripe/apply-stay-discount",
+        { code },
+      );
+      if (!result.ok) {
+        setResumeError(result.error);
+        setResumeBusy(false);
+        return;
+      }
+      toast.success(`Resumed — ${result.data.applied} applied`, {
+        description: "Your subscription is active again with the discount.",
+      });
+      setResumeCoupon("");
+      setResumeBusy(false);
+      router.refresh();
+    })();
   };
 
   const onValidateCoupon = async () => {
@@ -607,6 +639,96 @@ export function BillingClient({
           )}
         </div>
       </div>
+
+      {/*
+        Resume-with-discount panel — shown only to users who cancelled
+        but are still in the grace period. Lets them undo the cancel
+        AND apply a coupon in a single click. Hits the same
+        apply-stay-discount endpoint the ChurnModal uses; that endpoint
+        also clears cancel_at_period_end / cancel_at on the Stripe sub
+        so the cancellation banner disappears on next render.
+      */}
+      {onPaid && cancelled && (
+        <div
+          style={{
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
+            borderRadius: 10,
+            padding: 18,
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+            Changed your mind?
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--c-text-dim)",
+              lineHeight: 1.55,
+              marginBottom: 12,
+            }}
+          >
+            Enter a promo code and we&apos;ll resume your subscription with
+            the discount applied.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={resumeCoupon}
+              onChange={(e) => {
+                setResumeCoupon(e.target.value);
+                setResumeError(null);
+              }}
+              placeholder="ENTER CODE"
+              onKeyDown={(e) => e.key === "Enter" && onResumeWithDiscount()}
+              disabled={resumeBusy}
+              style={{
+                flex: 1,
+                background: "var(--c-surface-b)",
+                border: `1px solid ${resumeError ? "var(--c-danger)" : "var(--c-border)"}`,
+                borderRadius: 7,
+                padding: "8px 10px",
+                color: "var(--c-text)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                outline: "none",
+                opacity: resumeBusy ? 0.6 : 1,
+              }}
+            />
+            <button
+              type="button"
+              onClick={onResumeWithDiscount}
+              disabled={resumeBusy}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 7,
+                background: "var(--c-primary)",
+                color: "#000",
+                border: "none",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: resumeBusy ? "not-allowed" : "pointer",
+                opacity: resumeBusy ? 0.6 : 1,
+                fontFamily: "var(--font-sans)",
+              }}
+            >
+              {resumeBusy ? "Resuming…" : "Resume with code"}
+            </button>
+          </div>
+          {resumeError && (
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--c-danger)",
+                marginTop: 6,
+              }}
+            >
+              {resumeError}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Coupon (free users only — paid users use the Stripe portal for changes) */}
       {isFree && (
