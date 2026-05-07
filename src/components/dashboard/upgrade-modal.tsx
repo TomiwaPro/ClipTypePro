@@ -2,7 +2,9 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { useUIStore } from "./ui-store";
 
 /**
@@ -10,10 +12,10 @@ import { useUIStore } from "./ui-store";
  *   - free user clicks a Pro-locked sidebar item
  *   - free user clicks the "Upgrade to Pro" button in the sidebar footer
  *
- * Monthly / annual toggle previews the right price. Both CTA paths route
- * to the Stripe checkout endpoint, which is wired up properly in Step 8.
- * Until then the button shows a disabled-looking "Coming Step 8" state
- * so we don't pretend the flow works.
+ * Monthly / annual toggle previews the right price; the CTA hits
+ * /api/stripe/create-checkout-session with the chosen cycle (the server
+ * resolves the cycle to the canonical Stripe price ID — clients never
+ * see the IDs directly).
  */
 
 const REASON_HEADLINES: Record<string, string> = {
@@ -37,6 +39,10 @@ export function UpgradeModal() {
   const reason = useUIStore((s) => s.upgradeReason);
   const close = useUIStore((s) => s.closeUpgrade);
   const [cycle, setCycle] = useState<"monthly" | "annual">("monthly");
+  const [busy, setBusy] = useState(false);
+  // Synchronous gate so two fast clicks don't fire two checkout sessions
+  // before React commits the disabled state.
+  const navInFlightRef = useRef(false);
 
   const headline =
     (reason && REASON_HEADLINES[reason]) ||
@@ -44,6 +50,25 @@ export function UpgradeModal() {
 
   const monthlyPrice = "$9";
   const annualMonthly = "$6.58";
+
+  const onUpgrade = async () => {
+    if (navInFlightRef.current) return;
+    navInFlightRef.current = true;
+    setBusy(true);
+    const result = await apiPost<{ url: string }>(
+      "/api/stripe/create-checkout-session",
+      { cycle },
+    );
+    if (!result.ok || !result.data.url) {
+      navInFlightRef.current = false;
+      setBusy(false);
+      toast.error("Couldn't start checkout", {
+        description: result.ok ? "No checkout URL returned" : result.error,
+      });
+      return;
+    }
+    window.location.href = result.data.url;
+  };
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => (o ? null : close())}>
@@ -202,8 +227,8 @@ export function UpgradeModal() {
 
           <button
             type="button"
-            disabled
-            title="Stripe checkout wires up in Step 8"
+            onClick={onUpgrade}
+            disabled={busy}
             style={{
               width: "100%",
               padding: 12,
@@ -213,11 +238,13 @@ export function UpgradeModal() {
               fontWeight: 700,
               fontSize: 13,
               border: "none",
-              cursor: "not-allowed",
-              opacity: 0.6,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.6 : 1,
             }}
           >
-            ✦ Start 14-day Free Trial · {cycle === "annual" ? "annual" : "monthly"}
+            {busy
+              ? "Opening checkout…"
+              : `✦ Start 14-day Free Trial · ${cycle === "annual" ? "annual" : "monthly"}`}
           </button>
           <div
             style={{
@@ -227,7 +254,7 @@ export function UpgradeModal() {
               marginTop: 8,
             }}
           >
-            Stripe checkout wires up in Step 8 · Cancel anytime · 14-day money-back
+            Cancel anytime · 14-day money-back
           </div>
         </Dialog.Content>
       </Dialog.Portal>
