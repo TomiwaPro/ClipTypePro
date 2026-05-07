@@ -293,13 +293,19 @@ export function BillingClient({
           Couldn&apos;t reach Stripe: {stripeData.error}
         </Banner>
       )}
-      {cancelled && stripeData.currentPeriodEnd && (
+      {cancelled && (
         <Banner kind="warning">
-          Subscription will end on{" "}
-          <strong>
-            {formatDate(stripeData.currentPeriodEnd)}
-          </strong>
-          . Resume anytime before then via Manage billing.
+          🚫 Subscription cancelled.
+          {stripeData.currentPeriodEnd ? (
+            <>
+              {" "}You&apos;ll keep Pro until{" "}
+              <strong>{formatDate(stripeData.currentPeriodEnd)}</strong>, then
+              automatically drop to Free. Resume anytime before that via
+              Manage payment method.
+            </>
+          ) : (
+            <> Resume anytime via Manage payment method.</>
+          )}
         </Banner>
       )}
       {subscriptionStatus === "past_due" && (
@@ -352,6 +358,25 @@ export function BillingClient({
                 }}
               >
                 {subscriptionStatus.toUpperCase()}
+              </span>
+            )}
+            {cancelled && (
+              <span
+                style={{
+                  marginLeft: 8,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  color: "var(--c-warning)",
+                  background:
+                    "color-mix(in srgb, var(--c-warning) 15%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--c-warning) 35%, transparent)",
+                  borderRadius: 3,
+                  padding: "2px 6px",
+                }}
+              >
+                CANCELLED
               </span>
             )}
           </div>
@@ -465,6 +490,20 @@ export function BillingClient({
                 style={ghostBtn(pending)}
               >
                 {pending ? "Opening…" : "Manage payment method"}
+              </button>
+              {/*
+                Refresh button always available for paid users too so a
+                portal-side change (cancel, resume, plan switch) that
+                somehow doesn't hit our webhook can be resynced manually.
+              */}
+              <button
+                type="button"
+                onClick={onRefreshFromStripe}
+                disabled={syncBusy}
+                title="Pull latest subscription state from Stripe"
+                style={ghostBtn(syncBusy)}
+              >
+                {syncBusy ? "Syncing…" : "Refresh from Stripe"}
               </button>
               {!cancelled && (
                 <button
@@ -591,16 +630,6 @@ export function BillingClient({
               {couponError}
             </div>
           )}
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--c-text-muted)",
-              marginTop: 7,
-            }}
-          >
-            Try: STAY50 · LAUNCH30 · PRO50 (must be configured in your Stripe
-            dashboard)
-          </div>
         </div>
       )}
 
