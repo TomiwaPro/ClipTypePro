@@ -141,6 +141,46 @@ async function handleCheckoutCompleted(
       trial_ends_at: trialEnd,
     })
     .eq("id", userId);
+
+  // Defensive cleanup: cancel any other live subs on this customer.
+  // Users who clicked Upgrade multiple times (or whose webhook history
+  // is messy) can end up with multiple parallel subscriptions billing
+  // them in parallel. We treat the just-completed Checkout sub as the
+  // canonical one and cancel everything else immediately.
+  if (customerId && subscriptionId) {
+    try {
+      const stripe = getStripe();
+      const others = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "all",
+        limit: 20,
+      });
+      const cancellable = others.data.filter(
+        (s) =>
+          s.id !== subscriptionId &&
+          (s.status === "active" ||
+            s.status === "trialing" ||
+            s.status === "past_due" ||
+            s.status === "incomplete"),
+      );
+      for (const stale of cancellable) {
+        try {
+          await stripe.subscriptions.cancel(stale.id);
+        } catch (e) {
+          console.warn(
+            "[stripe-webhook] failed to cancel stale sub",
+            stale.id,
+            (e as Error).message,
+          );
+        }
+      }
+    } catch (e) {
+      console.warn(
+        "[stripe-webhook] stale-sub cleanup failed:",
+        (e as Error).message,
+      );
+    }
+  }
 }
 
 async function handleSubscriptionUpdated(
@@ -151,6 +191,20 @@ async function handleSubscriptionUpdated(
     (sub.metadata?.user_id as string | undefined) ??
     (await userIdFromCustomer(sub.customer, admin));
   if (!userId) return;
+
+  // Only mirror events for the subscription we're currently tracking.
+  // A user can have stale subs left over from earlier upgrades; events
+  // for those would otherwise overwrite our pointer and corrupt state.
+  // If the profile has no tracked sub yet (first event after Checkout),
+  // we accept this event and let it set the pointer.
+  const tracked = await trackedSubId(userId, admin);
+  if (tracked && tracked !== sub.id) {
+    console.warn(
+      "[stripe-webhook] ignoring subscription.updated for non-tracked sub",
+      { userId, eventSub: sub.id, trackedSub: tracked, status: sub.status },
+    );
+    return;
+  }
 
   // If status is canceled / unpaid / incomplete_expired, drop the user
   // back to the free tier. Otherwise keep them on Pro and just mirror
@@ -184,6 +238,18 @@ async function handleSubscriptionDeleted(
     (await userIdFromCustomer(sub.customer, admin));
   if (!userId) return;
 
+  // Only downgrade if the deleted sub is the one we're tracking. A
+  // delete event for a stale sub (e.g. one we cancelled in cleanup)
+  // must not knock the user out of Pro on their real subscription.
+  const tracked = await trackedSubId(userId, admin);
+  if (tracked && tracked !== sub.id) {
+    console.warn(
+      "[stripe-webhook] ignoring subscription.deleted for non-tracked sub",
+      { userId, eventSub: sub.id, trackedSub: tracked },
+    );
+    return;
+  }
+
   await admin
     .from("profiles")
     .update({
@@ -212,6 +278,17 @@ async function handleInvoicePaymentFailed(
     (sub.metadata?.user_id as string | undefined) ??
     (await userIdFromCustomer(sub.customer, admin));
   if (!userId) return;
+
+  // Only flag past_due if the failed invoice is for the sub we track.
+  // Stale subs failing to charge must not poison the live sub's UI.
+  const tracked = await trackedSubId(userId, admin);
+  if (tracked && tracked !== subscriptionId) {
+    console.warn(
+      "[stripe-webhook] ignoring invoice.payment_failed for non-tracked sub",
+      { userId, eventSub: subscriptionId, trackedSub: tracked },
+    );
+    return;
+  }
 
   // Record the payment failure on the profile so the billing UI can
   // surface a "your payment failed" banner. A real email notification
@@ -245,4 +322,16 @@ async function userIdFromCustomer(
     .eq("stripe_customer_id", cid)
     .single();
   return (data?.id as string) ?? null;
+}
+
+async function trackedSubId(
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("profiles")
+    .select("stripe_subscription_id")
+    .eq("id", userId)
+    .single();
+  return (data?.stripe_subscription_id as string | null) ?? null;
 }
