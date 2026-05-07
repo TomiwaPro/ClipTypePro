@@ -107,6 +107,7 @@ export default async function BillingPage({
         profile.stripe_subscription_id
           ? stripe.subscriptions.retrieve(
               profile.stripe_subscription_id as string,
+              { expand: ["default_payment_method"] },
             )
           : Promise.resolve(null),
         stripe.invoices.list({
@@ -128,22 +129,70 @@ export default async function BillingPage({
           null);
       const interval = subs?.items?.data?.[0]?.price?.recurring?.interval ?? null;
 
-      // Payment method
+      // Payment method — try three sources in priority order so we find the
+      // card wherever Stripe stored it. Different flows attach the card in
+      // different places:
+      //   1. Customer-level default (set after first successful invoice or
+      //      explicitly via the portal)
+      //   2. Subscription-level default (Checkout subscription mode often
+      //      sets this rather than the customer default)
+      //   3. The customer's most recently added card payment method
+      //      (covers edge cases where neither default was set)
       let pm: typeof stripeData.paymentMethod = null;
-      if (
-        customer &&
-        !customer.deleted &&
-        customer.invoice_settings?.default_payment_method &&
-        typeof customer.invoice_settings.default_payment_method === "object" &&
-        customer.invoice_settings.default_payment_method.card
-      ) {
-        const card = customer.invoice_settings.default_payment_method.card;
+
+      const customerDefaultPm =
+        customer && !customer.deleted
+          ? customer.invoice_settings?.default_payment_method
+          : null;
+      const subDefaultPm = (subs as unknown as { default_payment_method?: unknown })
+        ?.default_payment_method ?? null;
+
+      const cardFromExpanded = (raw: unknown) =>
+        raw &&
+        typeof raw === "object" &&
+        "card" in raw &&
+        (raw as { card?: { brand: string; last4: string; exp_month: number; exp_year: number } | null }).card
+          ? (raw as { card: { brand: string; last4: string; exp_month: number; exp_year: number } }).card
+          : null;
+
+      const customerCard = cardFromExpanded(customerDefaultPm);
+      const subCard = cardFromExpanded(subDefaultPm);
+
+      if (customerCard) {
         pm = {
-          brand: card.brand,
-          last4: card.last4,
-          expMonth: card.exp_month,
-          expYear: card.exp_year,
+          brand: customerCard.brand,
+          last4: customerCard.last4,
+          expMonth: customerCard.exp_month,
+          expYear: customerCard.exp_year,
         };
+      } else if (subCard) {
+        pm = {
+          brand: subCard.brand,
+          last4: subCard.last4,
+          expMonth: subCard.exp_month,
+          expYear: subCard.exp_year,
+        };
+      } else {
+        // Last resort: list any card on file. Avoids blank state when Stripe
+        // hasn't promoted any card to "default" but a card definitely exists.
+        try {
+          const pms = await stripe.paymentMethods.list({
+            customer: profile.stripe_customer_id as string,
+            type: "card",
+            limit: 1,
+          });
+          const card = pms.data[0]?.card;
+          if (card) {
+            pm = {
+              brand: card.brand,
+              last4: card.last4,
+              expMonth: card.exp_month,
+              expYear: card.exp_year,
+            };
+          }
+        } catch {
+          /* fall through; UI shows "no card on file" hint */
+        }
       }
 
       stripeData = {
