@@ -774,7 +774,25 @@ export function BillingClient({
         </div>
       )}
 
-      {/* Invoices */}
+      {/* Invoices — empty state for Pro users who haven't been billed yet */}
+      {onPaid &&
+        (stripeData.invoices?.length ?? 0) === 0 && (
+          <div
+            style={{
+              background: "var(--c-surface)",
+              border: "1px solid var(--c-border)",
+              borderRadius: 10,
+              padding: 18,
+              fontSize: 12,
+              color: "var(--c-text-dim)",
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, color: "var(--c-text)" }}>
+              Invoice history
+            </div>
+            No invoices yet. Your first invoice will appear here after the trial ends.
+          </div>
+        )}
       {onPaid && stripeData.invoices && stripeData.invoices.length > 0 && (
         <div
           style={{
