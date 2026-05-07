@@ -119,14 +119,25 @@ export default async function BillingPage({
         }),
       ]);
 
-      const cancelEnd = subs?.cancel_at_period_end ?? false;
+      // Stripe surfaces a pending cancellation via TWO different fields
+      // depending on what triggered it:
+      //   - `cancel_at_period_end: true`  — set by stripe.subscriptions.update
+      //                                     (our in-app Cancel button uses this)
+      //   - `cancel_at: <unix-ts>`        — set by the Stripe Customer Portal
+      //                                     when a trialing user cancels
+      //                                     (Stripe schedules cancellation at
+      //                                      trial_end via cancel_at)
+      // We treat either as "cancellation pending" and show the banner. The
+      // effective end date is cancel_at if set, else current_period_end.
+      const cancelAtTs =
+        (subs as unknown as { cancel_at?: number | null })?.cancel_at ?? null;
+      const cancelAtPeriodEndFlag = subs?.cancel_at_period_end === true;
+      const cancelEnd = cancelAtPeriodEndFlag || cancelAtTs !== null;
       const periodEnd =
-        // Different Stripe API versions surface this on the subscription
-        // top-level vs the items[] entry. Cast safely and read whichever
-        // shape exists.
         ((subs as unknown as { current_period_end?: number })?.current_period_end ??
           subs?.items?.data?.[0]?.current_period_end ??
           null);
+      const effectiveEnd = cancelAtTs ?? periodEnd;
       const interval = subs?.items?.data?.[0]?.price?.recurring?.interval ?? null;
 
       // Payment method — try three sources in priority order so we find the
@@ -197,8 +208,8 @@ export default async function BillingPage({
 
       stripeData = {
         cancelAtPeriodEnd: cancelEnd,
-        currentPeriodEnd: periodEnd
-          ? new Date(periodEnd * 1000).toISOString()
+        currentPeriodEnd: effectiveEnd
+          ? new Date(effectiveEnd * 1000).toISOString()
           : null,
         interval: (interval as "month" | "year" | null) ?? null,
         paymentMethod: pm,
