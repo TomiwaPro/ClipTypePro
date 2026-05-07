@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { recordReferralFromCookie } from "@/lib/auth/referral";
+import { claimTeamInviteFromCookie } from "@/lib/auth/team-invite";
 
 /**
  * Auth callback route: handles
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
     }
     if (data.user?.id && data.user.email) {
       await recordReferralFromCookie(data.user.id, data.user.email);
+      await claimTeamInviteFromCookie(data.user.id, data.user.email);
     }
   }
 
