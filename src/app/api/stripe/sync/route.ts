@@ -148,31 +148,28 @@ async function handle(req: Request) {
   }
 
   // ─── Resolve subscription on this customer ──────────────────────────────
-  let subscription: Stripe.Subscription | null = null;
-  if (discovery.subscriptionId) {
-    try {
-      subscription = await stripe.subscriptions.retrieve(
-        discovery.subscriptionId,
-      );
-    } catch {
-      subscription = null;
-    }
-  }
-  if (!subscription) {
-    // Final fallback: list subs on the customer, take the first that's
-    // in any "user has access" state, otherwise the first at all.
-    const subs = await stripe.subscriptions.list({
-      customer: discovery.customerId,
-      status: "all",
-      limit: 5,
-    });
-    subscription =
-      subs.data.find((s) =>
-        ["active", "trialing", "past_due"].includes(s.status),
-      ) ??
-      subs.data[0] ??
-      null;
-  }
+  // Always list the customer's subs and pick the newest live one. Trusting
+  // a stored subscriptionId blindly is what got us into multi-sub
+  // corruption: if the tracked sub was cancelled but a parallel one is
+  // active, retrieving the tracked sub returns canceled and we'd downgrade
+  // the user. Listing + picking-the-newest-active self-heals from any
+  // prior drift between Stripe and our DB.
+  const subs = await stripe.subscriptions.list({
+    customer: discovery.customerId,
+    status: "all",
+    limit: 20,
+  });
+  const live = subs.data
+    .filter((s) =>
+      ["active", "trialing", "past_due"].includes(s.status),
+    )
+    .sort((a, b) => b.created - a.created);
+  // Prefer newest live sub. If none, fall back to the most recent sub
+  // overall (lets us reflect a "canceled" state correctly when the user
+  // really has no active sub).
+  const sortedAll = [...subs.data].sort((a, b) => b.created - a.created);
+  const subscription: Stripe.Subscription | null =
+    live[0] ?? sortedAll[0] ?? null;
 
   const status = subscription?.status ?? null;
   const tier: Tier =
