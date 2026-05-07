@@ -1,17 +1,14 @@
-import { StubPage } from "@/components/dashboard/stub-page";
+import { HelpClient } from "@/components/dashboard/help/help-client";
 
+export const dynamic = "force-static";
+
+/**
+ * Help — searchable FAQ + keyboard shortcuts + support entry points.
+ *
+ * Server component is just a shell so the route works without auth;
+ * the FAQ content is bundled into the client component (it doesn't
+ * change often, no need to round-trip a DB query).
+ */
 export default function HelpPage() {
-  return (
-    <StubPage
-      title="Help & Documentation"
-      subtitle="Guides, keyboard shortcuts, support"
-      comingIn="Step 9"
-      bullets={[
-        "Searchable help articles",
-        "Cheat-sheet of keyboard shortcuts",
-        "Live chat (working hours) + email fallback",
-        "Quick links to Status, Security, Privacy",
-      ]}
-    />
-  );
+  return <HelpClient />;
 }
