@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   type NotificationPreferences,
   SettingsClient,
@@ -30,12 +29,11 @@ const DEFAULT_NOTIF: NotificationPreferences = {
 /**
  * Settings page — pre-populated from the user's profile row.
  *
- * Email-change confirmation lag: when the user updates their email, the
- * confirmation link Supabase sends doesn't fire any of our webhooks.
- * `auth.users.email` flips when the link is clicked, but `profiles.email`
- * stays stale. We do a one-shot reconciliation on every settings load:
- * if the auth email and profile email differ, sync via the service-role
- * client (RLS would block a normal update on profiles.email).
+ * Email sync: profiles.email stays in lockstep with auth.users.email
+ * via the sync_profile_email trigger added in migration 004. The page
+ * just reads user.email (the auth source of truth) for the input
+ * default, so the form is always correct even if a confirmation link
+ * was clicked between renders.
  */
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -46,27 +44,9 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select(
-      "full_name, email, theme_preference, typing_settings, notification_preferences",
-    )
+    .select("full_name, typing_settings, notification_preferences")
     .eq("id", user.id)
     .single();
-
-  // Reconcile profile.email with auth.users.email if they drifted (the
-  // user confirmed an email change since the last settings load).
-  if (profile && user.email && profile.email !== user.email) {
-    try {
-      const admin = createAdminClient();
-      await admin
-        .from("profiles")
-        .update({ email: user.email })
-        .eq("id", user.id);
-      profile.email = user.email;
-    } catch {
-      /* non-fatal — UI shows the current auth email; profile.email stays
-         stale until next reconciliation */
-    }
-  }
 
   const typing = (profile?.typing_settings as TypingSettings | null) ?? null;
   const notif =
@@ -77,9 +57,6 @@ export default async function SettingsPage() {
     <SettingsClient
       fullName={(profile?.full_name as string | null) ?? ""}
       email={user.email ?? ""}
-      themePreference={
-        (profile?.theme_preference as "dark" | "light" | null) ?? "dark"
-      }
       typingSettings={{ ...DEFAULT_TYPING, ...(typing ?? {}) }}
       notificationPreferences={{ ...DEFAULT_NOTIF, ...(notif ?? {}) }}
     />
