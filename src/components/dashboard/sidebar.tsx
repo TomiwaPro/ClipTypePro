@@ -30,17 +30,21 @@ export function Sidebar({
   tier,
   unreadCount,
   trialDaysLeft,
+  isFree,
 }: {
   tier: "free" | "pro" | "teams" | "enterprise";
   unreadCount: number;
   trialDaysLeft: number | null;
+  // Computed in the layout via hasProAccess so the signup trial counts
+  // as Pro for the lock-icon / upgrade-modal interception logic. The
+  // tier prop is still used for the footer pill display.
+  isFree: boolean;
 }) {
   const pathname = usePathname();
   const openSearch = useUIStore((s) => s.openSearch);
   const openUpgrade = useUIStore((s) => s.openUpgrade);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const closeSidebar = useUIStore((s) => s.closeSidebar);
-  const isFree = tier === "free";
 
   const handleNavClick = (
     e: MouseEvent<HTMLAnchorElement>,
