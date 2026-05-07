@@ -24,10 +24,15 @@ import { getStripe, getStripeEnv } from "@/lib/stripe/server";
  *     not charged until trial ends.
  */
 
-const bodySchema = z.object({
-  priceId: z.string().min(1, "priceId required"),
-  coupon: z.string().optional(),
-});
+const bodySchema = z
+  .object({
+    priceId: z.string().optional(),
+    cycle: z.enum(["monthly", "annual"]).optional(),
+    coupon: z.string().optional(),
+  })
+  .refine((v) => Boolean(v.priceId || v.cycle), {
+    message: "priceId or cycle is required",
+  });
 
 export async function POST(req: Request) {
   try {
@@ -55,7 +60,7 @@ async function handle(req: Request) {
       { status: 400 },
     );
   }
-  const { priceId, coupon } = parsed.data;
+  const { priceId: rawPriceId, cycle, coupon } = parsed.data;
 
   // Auth + identity
   const supabase = await createClient();
@@ -66,7 +71,8 @@ async function handle(req: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Allow only known price IDs
+  // Allow only known price IDs. Resolve cycle → priceId server-side so
+  // the client never has to know the actual Stripe price IDs.
   let stripeEnv;
   try {
     stripeEnv = getStripeEnv();
@@ -76,6 +82,9 @@ async function handle(req: Request) {
       { status: 500 },
     );
   }
+  const priceId =
+    rawPriceId ??
+    (cycle === "annual" ? stripeEnv.annualPriceId : stripeEnv.monthlyPriceId);
   const allowedPriceIds = [stripeEnv.monthlyPriceId, stripeEnv.annualPriceId];
   if (!allowedPriceIds.includes(priceId)) {
     return NextResponse.json(

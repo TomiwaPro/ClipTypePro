@@ -299,6 +299,24 @@ async function handleInvoicePaymentFailed(
     .update({ subscription_status: "past_due" })
     .eq("id", userId);
 
+  // Idempotency: Stripe retries failed-payment events on backoff for
+  // up to ~3 days, and also re-fires the same event id on transient
+  // 5xx responses. The profile update above is naturally idempotent;
+  // the notifications insert is not. Skip if a payment-failed notif
+  // already exists for this user in the last 7 days.
+  const sevenDaysAgo = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data: recent } = await admin
+    .from("notifications")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("type", "billing")
+    .eq("title", "Payment failed")
+    .gte("created_at", sevenDaysAgo)
+    .limit(1);
+  if (recent && recent.length > 0) return;
+
   await admin.from("notifications").insert({
     user_id: userId,
     type: "billing",
