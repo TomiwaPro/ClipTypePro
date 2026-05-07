@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/theme-provider";
 import {
@@ -11,7 +11,6 @@ import {
   updateNotificationPrefsAction,
   updatePasswordAction,
   updateProfileAction,
-  updateThemePreferenceAction,
   updateTypingSettingsAction,
 } from "@/app/dashboard/settings/actions";
 
@@ -36,13 +35,11 @@ export type NotificationPreferences = {
 export function SettingsClient({
   fullName,
   email,
-  themePreference,
   typingSettings,
   notificationPreferences,
 }: {
   fullName: string;
   email: string;
-  themePreference: "dark" | "light";
   typingSettings: TypingSettings;
   notificationPreferences: NotificationPreferences;
 }) {
@@ -69,7 +66,7 @@ export function SettingsClient({
 
       <ProfileSection initialName={fullName} initialEmail={email} />
       <PasswordSection />
-      <ThemeSection initialPreference={themePreference} />
+      <ThemeSection />
       <TypingSection initial={typingSettings} />
       <NotificationsSection initial={notificationPreferences} />
       <PrivacyDataSection />
@@ -228,28 +225,15 @@ function PasswordSection() {
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 
-function ThemeSection({
-  initialPreference,
-}: {
-  initialPreference: "dark" | "light";
-}) {
+function ThemeSection() {
   const { theme, setTheme } = useTheme();
 
-  // Initial sync — if the persisted preference differs from localStorage,
-  // adopt the persisted preference. Runs once.
-  useEffect(() => {
-    if (initialPreference !== theme) setTheme(initialPreference);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const onSelect = (next: "dark" | "light") => {
-    if (next === theme) return;
-    setTheme(next);
-    void updateThemePreferenceAction({ theme: next });
-  };
+  // The dashboard layout's <ThemeSeed> handles cross-device sync — it
+  // adopts profile.theme_preference on a fresh device and persists every
+  // change to the DB. This panel just toggles the local store.
 
   return (
-    <Card title="Appearance" subtitle="Mirrors the topbar toggle.">
+    <Card title="Appearance" subtitle="Mirrors the topbar toggle and follows you across devices.">
       <div
         role="tablist"
         aria-label="Theme"
@@ -268,7 +252,7 @@ function ThemeSection({
             type="button"
             role="tab"
             aria-selected={theme === t}
-            onClick={() => onSelect(t)}
+            onClick={() => setTheme(t)}
             style={pillBtn(theme === t)}
           >
             {t === "dark" ? "🌙 Dark" : "☀️ Light"}

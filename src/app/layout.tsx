@@ -21,6 +21,14 @@ export const metadata: Metadata = {
     "ClipType Pro monitors your clipboard and types text character by character into any field, simulating perfect human keystrokes.",
 };
 
+// Inline script: read the persisted theme from localStorage and apply
+// data-theme to <html> BEFORE first paint. Avoids the dark→light flash
+// that returning users see while React hydrates and ThemeProvider's
+// useEffect catches up. Runs sync; failure is fine (defaults to dark).
+const themeBootstrap = `
+(function(){try{var t=localStorage.getItem('ctp_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -31,6 +39,9 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${dmSans.variable} ${spaceMono.variable}`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
       </body>

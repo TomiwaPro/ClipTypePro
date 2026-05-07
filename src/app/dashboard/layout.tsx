@@ -4,6 +4,7 @@ import { BfcacheReload } from "@/components/dashboard/bfcache-reload";
 import { GlobalSearch } from "@/components/dashboard/global-search";
 import { MobileBackdrop } from "@/components/dashboard/mobile-backdrop";
 import { Sidebar } from "@/components/dashboard/sidebar";
+import { ThemeSeed } from "@/components/dashboard/theme-seed";
 import { Topbar } from "@/components/dashboard/topbar";
 import { UpgradeModal } from "@/components/dashboard/upgrade-modal";
 
@@ -132,6 +133,11 @@ export default async function DashboardLayout({
       </div>
 
       <BfcacheReload />
+      <ThemeSeed
+        serverTheme={
+          (profile?.theme_preference as "dark" | "light" | null) ?? "dark"
+        }
+      />
       <UpgradeModal />
       <GlobalSearch
         isFree={isFree}
