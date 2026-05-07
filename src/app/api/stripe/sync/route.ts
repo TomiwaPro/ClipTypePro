@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import type Stripe from "stripe";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
@@ -212,6 +213,13 @@ async function handle(req: Request) {
       { status: 500 },
     );
   }
+
+  // Drop any cached RSC payload for the billing page so the client's
+  // next render fetches the just-updated profile + the latest Stripe
+  // subscription state (including cancel_at_period_end after a portal
+  // cancellation). The client also does a hard nav after this returns;
+  // this is belt-and-braces for any other surface that hits the page.
+  revalidatePath("/dashboard/billing");
 
   return NextResponse.json({
     ok: true,
