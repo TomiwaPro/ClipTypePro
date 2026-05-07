@@ -76,6 +76,12 @@ export function BillingClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [syncBusy, setSyncBusy] = useState(false);
+  // Synchronous gate against rapid double-clicks on Upgrade / Manage —
+  // `pending` from useTransition flips on the next render, so two
+  // synchronous clicks both sail past `disabled={pending}` and create
+  // two checkout sessions. Ref check at the top of the handler closes
+  // that window.
+  const navInFlightRef = useRef(false);
 
   // Last successful sync's diagnostic payload — used by the diagnostic
   // panel to show the user what we found so they (and we) can debug
@@ -209,12 +215,14 @@ export function BillingClient({
   };
 
   const onUpgrade = () => {
+    if (navInFlightRef.current) return;
     if (!stripeReady) {
       toast.error("Stripe isn't configured", {
         description: "Set the STRIPE_* env vars in .env.local.",
       });
       return;
     }
+    navInFlightRef.current = true;
     const priceId = cycle === "year" ? annualPriceId : monthlyPriceId;
     startTransition(async () => {
       const result = await apiPost<{ url: string }>(
@@ -222,6 +230,7 @@ export function BillingClient({
         { priceId, coupon: couponApplied?.code },
       );
       if (!result.ok || !result.data.url) {
+        navInFlightRef.current = false;
         toast.error("Couldn't start checkout", {
           description: result.ok ? "No checkout URL returned" : result.error,
         });
@@ -232,9 +241,12 @@ export function BillingClient({
   };
 
   const onManage = () => {
+    if (navInFlightRef.current) return;
+    navInFlightRef.current = true;
     startTransition(async () => {
       const result = await apiPost<{ url: string }>("/api/stripe/customer-portal");
       if (!result.ok || !result.data.url) {
+        navInFlightRef.current = false;
         toast.error("Couldn't open billing portal", {
           description: result.ok ? "No URL returned" : result.error,
         });
